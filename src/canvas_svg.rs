@@ -8,12 +8,14 @@ pub enum Positioning {
     TopLeft(Point<f32>),
 }
 
+#[allow(dead_code)]
 pub enum SizingMode {
     WidthOnly(f32),
     HeightOnly(f32),
     Fixed(Size<f32>),
 }
 
+#[allow(dead_code)]
 pub struct CanvasSVG {
     path: &'static str,
     // `aspect_ratio` is Width / Height
