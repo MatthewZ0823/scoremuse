@@ -1,0 +1,1 @@
+I need to figure out if the staffs are rendering on top of each other and how to stop that if so

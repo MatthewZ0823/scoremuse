@@ -3,8 +3,12 @@ name = "scoremuse"
 version = "0.1.0"
 edition = "2024"
 
+[patch.crates-io]
+iced = { path = "../iced-patch" }
+
 [dependencies]
 iced = { version = "0.14.0", features = ["canvas", "svg", "image"] }
 
 [features]
 debug = ["iced/hot"]
+

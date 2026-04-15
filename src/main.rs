@@ -1,11 +1,14 @@
-use crate::staff::{Pitch, Staff};
+use crate::score::Score;
+use crate::staff::Pitch;
 use iced::Color;
 use iced::Element;
 use iced::Fill;
 use iced::widget::canvas;
 use iced::widget::{button, column, text};
 
+mod canvas_el;
 mod canvas_svg;
+mod score;
 mod staff;
 
 const DEBUG: bool = true;
@@ -13,7 +16,7 @@ const DEBUG: bool = true;
 #[derive(Default)]
 struct App {
     value: i64,
-    staff: Staff,
+    score: Score,
 }
 
 impl App {
@@ -25,9 +28,10 @@ impl App {
             Message::Decrement => {
                 self.value -= 1;
             }
-            Message::AddNote(note) => {
-                self.staff.notes.push(note);
-                self.staff.redraw();
+            Message::AddNote(note, staff_num) => {
+                // self.score.staffs[staff_num].notes.push(note);
+                // TODO
+                ()
             }
         }
     }
@@ -40,10 +44,10 @@ impl App {
         // The number
         let counter = text(self.value).size(100);
 
-        let staff = canvas(&self.staff).width(Fill).height(Fill);
+        let score = canvas(&self.score).width(Fill).height(Fill);
 
         // The layout
-        let interface: Element<_> = column![increment, counter, decrement, staff]
+        let interface: Element<_> = column![increment, counter, decrement, score]
             .height(Fill)
             .width(Fill)
             .into();
@@ -62,7 +66,7 @@ impl App {
 enum Message {
     Increment,
     Decrement,
-    AddNote(Pitch),
+    AddNote(Pitch, u32),
 }
 
 fn main() -> iced::Result {
