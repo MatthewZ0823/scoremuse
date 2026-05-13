@@ -6,6 +6,7 @@ use iced::widget::canvas;
 use iced::widget::{button, column, text};
 
 mod canvas_svg;
+mod fraction;
 mod staff;
 
 const DEBUG: bool = true;

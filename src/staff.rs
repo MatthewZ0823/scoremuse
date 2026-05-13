@@ -2,9 +2,10 @@ use core::f32;
 use std::array::from_fn;
 
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
+use crate::fraction::Fraction;
 use iced::widget::Action;
 use iced::widget::canvas::{self};
-use iced::{Point, Rectangle, Renderer, Theme, mouse};
+use iced::{Color, Point, Rectangle, Renderer, Theme, mouse};
 
 use crate::Message;
 
@@ -20,7 +21,7 @@ const FILLED_NOTE_HEAD_PATH: &str = "src/assets/filled_note_head.svg";
 #[derive(Debug, Default)]
 pub struct Staff {
     cache: canvas::Cache,
-    pub notes: Vec<Pitch>,
+    pub bars: Vec<Bar>,
 }
 
 impl Staff {
@@ -30,7 +31,7 @@ impl Staff {
 }
 
 #[derive(Default)]
-pub struct StaffInternal {
+pub struct StaffState {
     bar_lines: Option<[canvas::Path; 5]>,
     hovering: Option<Pitch>,
 }
@@ -47,6 +48,21 @@ pub enum PitchClass {
     G,
 }
 pub type Pitch = (PitchClass, u8);
+
+#[derive(Debug)]
+pub struct Note {
+    pitch: Pitch,
+    // 1 -> Whole Note, 2 -> Half Note, 3 - Quarter Note, ...
+    duration: u8,
+    // Start of the note relative to the start of the bar
+    // eg. 0 represents the note starting at the start of the bar, 1/2 means the note starts halfway through the bar
+    start: Fraction,
+}
+
+#[derive(Debug)]
+pub struct Bar {
+    notes: Vec<Note>,
+}
 
 fn y_offset_to_pitch(y: f32) -> Pitch {
     let note_space: f32 = 3. - y / NOTE_Y_SPACING;
@@ -100,7 +116,7 @@ fn create_bar_lines(bounds: &Rectangle) -> [canvas::Path; 5] {
 }
 
 impl canvas::Program<Message> for Staff {
-    type State = StaffInternal;
+    type State = StaffState;
 
     fn update(
         &self,
@@ -179,24 +195,32 @@ impl canvas::Program<Message> for Staff {
             );
             treble_clef.draw_to_frame(frame);
 
-            let note = |pitch| {
+            let note = |x, pitch| {
                 CanvasSVG::new(
                     FILLED_NOTE_HEAD_PATH,
                     FILLED_NOTE_HEAD_ASPECT_RATIO,
-                    Centered(Point::new(100., pitch_to_y_offset(pitch))),
-                    HeightOnly(20.),
+                    Centered(Point::new(x, pitch_to_y_offset(pitch))),
+                    HeightOnly(BARLINE_Y_SPACING * 1.1),
                 )
             };
-            self.notes.iter().for_each(|pitch| {
-                note(pitch).draw_to_frame(frame);
-            });
+
+            {
+                let mut x = 100.;
+                self.notes.iter().for_each(|pitch| {
+                    note(x, pitch).draw_to_frame(frame);
+                    x += 10.;
+                });
+            }
 
             match state.hovering {
                 Some(hovered) => {
-                    note(&hovered).draw_to_frame(frame);
+                    note(100., &hovered).draw_to_frame(frame);
                 }
                 None => (),
             }
+
+            let circle = canvas::Path::circle(Point { x: 0., y: 0. }, 5.);
+            frame.fill(&circle, Color::BLACK);
         });
 
         vec![geom]
