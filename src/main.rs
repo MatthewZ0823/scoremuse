@@ -27,7 +27,7 @@ impl App {
                 self.value -= 1;
             }
             Message::AddNote(note) => {
-                self.staff.notes.push(note);
+                // self.staff.notes.push(note);
                 self.staff.redraw();
             }
         }
