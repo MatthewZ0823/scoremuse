@@ -2,7 +2,6 @@ use core::f32;
 use std::array::from_fn;
 
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
-use crate::fraction::Fraction;
 use iced::widget::Action;
 use iced::widget::canvas::{self, Frame};
 use iced::{Color, Point, Rectangle, Renderer, Theme, mouse};
@@ -15,8 +14,11 @@ const NOTE_Y_SPACING: f32 = BARLINE_Y_SPACING / 2.;
 const TREBLE_CLEF_ASPECT_RATIO: f32 = 95.116 / 153.12;
 const TREBLE_CLEF_PATH: &str = "src/assets/treble_clef.svg";
 
-const FILLED_NOTE_HEAD_ASPECT_RATIO: f32 = 260. / 200.;
-const FILLED_NOTE_HEAD_PATH: &str = "src/assets/filled_note_head.svg";
+const FILLED_NOTE_HEAD_ASPECT_RATIO: f32 = 500. / 354.;
+const FILLED_NOTE_HEAD_PATH: &str = "src/assets/head_filled.svg";
+
+const HALF_NOTE_HEAD_ASPECT_RATIO: f32 = 500. / 354.;
+const HALF_NOTE_HEAD_PATH: &str = "src/assets/head_half.svg";
 
 #[derive(Debug, Default)]
 pub struct Staff {
@@ -55,9 +57,6 @@ pub struct NoteOrRest {
     pitch: Option<Pitch>,
     // 1 -> Whole Note, 2 -> Half Note, 3 - Quarter Note, ...
     duration: u8,
-    // Start of the note relative to the start of the bar
-    // eg. 0 represents the note starting at the start of the bar, 1/2 means the note starts halfway through the bar
-    start: Fraction,
 }
 
 #[derive(Debug)]
@@ -67,9 +66,32 @@ pub struct Bar {
 }
 
 fn render_note(x: f32, note: &NoteOrRest, frame: &mut Frame) {
+    let (path, aspect_ratio, y) = {
+        match note.pitch {
+            None => todo!(),
+            Some(pitch) => match note.duration {
+                1 => (
+                    HALF_NOTE_HEAD_PATH,
+                    HALF_NOTE_HEAD_ASPECT_RATIO,
+                    pitch_to_y_offset(&pitch),
+                ),
+                2 => (
+                    HALF_NOTE_HEAD_PATH,
+                    HALF_NOTE_HEAD_ASPECT_RATIO,
+                    pitch_to_y_offset(&pitch),
+                ),
+                3 => (
+                    FILLED_NOTE_HEAD_PATH,
+                    FILLED_NOTE_HEAD_ASPECT_RATIO,
+                    pitch_to_y_offset(&pitch),
+                ),
+            },
+        }
+    };
+
     CanvasSVG::new(
-        FILLED_NOTE_HEAD_PATH,
-        FILLED_NOTE_HEAD_ASPECT_RATIO,
+        path,
+        aspect_ratio,
         Centered(Point::new(x, pitch_to_y_offset(&note.pitch))),
         HeightOnly(BARLINE_Y_SPACING),
     )
@@ -205,9 +227,8 @@ impl canvas::Program<Message> for Staff {
     ) -> Vec<canvas::Geometry<Renderer>> {
         let sample_bar: Bar = Bar {
             notes: vec![NoteOrRest {
-                pitch: (PitchClass::E, 4),
+                pitch: Some((PitchClass::E, 4)),
                 duration: 1,
-                start: 0.into(),
             }],
         };
 
