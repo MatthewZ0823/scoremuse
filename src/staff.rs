@@ -2,9 +2,10 @@ use core::f32;
 use std::array::from_fn;
 
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
+use crate::note::{StemDirection, draw_note, draw_quarter_rest, draw_rect_rest};
 use iced::widget::Action;
-use iced::widget::canvas::{self, Frame};
-use iced::{Color, Point, Rectangle, Renderer, Theme, mouse};
+use iced::widget::canvas::{self, Frame, Path};
+use iced::{Point, Rectangle, Renderer, Theme, Vector, mouse};
 
 use crate::Message;
 
@@ -13,12 +14,6 @@ const NOTE_Y_SPACING: f32 = BARLINE_Y_SPACING / 2.;
 
 const TREBLE_CLEF_ASPECT_RATIO: f32 = 95.116 / 153.12;
 const TREBLE_CLEF_PATH: &str = "src/assets/treble_clef.svg";
-
-const FILLED_NOTE_HEAD_ASPECT_RATIO: f32 = 500. / 354.;
-const FILLED_NOTE_HEAD_PATH: &str = "src/assets/head_filled.svg";
-
-const HALF_NOTE_HEAD_ASPECT_RATIO: f32 = 500. / 354.;
-const HALF_NOTE_HEAD_PATH: &str = "src/assets/head_half.svg";
 
 #[derive(Debug, Default)]
 pub struct Staff {
@@ -59,57 +54,101 @@ pub struct NoteOrRest {
     duration: u8,
 }
 
+impl NoteOrRest {
+    pub fn new(pitch: Option<Pitch>, duration: u8) -> Self {
+        NoteOrRest {
+            pitch: pitch,
+            duration: duration,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Bar {
     // notes should be ordered by start
     notes: Vec<NoteOrRest>,
 }
 
-fn render_note(x: f32, note: &NoteOrRest, frame: &mut Frame) {
-    let (path, aspect_ratio, y) = {
-        match note.pitch {
-            None => todo!(),
-            Some(pitch) => match note.duration {
-                1 => (
-                    HALF_NOTE_HEAD_PATH,
-                    HALF_NOTE_HEAD_ASPECT_RATIO,
-                    pitch_to_y_offset(&pitch),
-                ),
-                2 => (
-                    HALF_NOTE_HEAD_PATH,
-                    HALF_NOTE_HEAD_ASPECT_RATIO,
-                    pitch_to_y_offset(&pitch),
-                ),
-                3 => (
-                    FILLED_NOTE_HEAD_PATH,
-                    FILLED_NOTE_HEAD_ASPECT_RATIO,
-                    pitch_to_y_offset(&pitch),
-                ),
-            },
-        }
-    };
+impl Bar {
+    pub fn new(notes: Vec<NoteOrRest>) -> Self {
+        Bar { notes: notes }
+    }
+}
 
-    CanvasSVG::new(
-        path,
-        aspect_ratio,
-        Centered(Point::new(x, pitch_to_y_offset(&note.pitch))),
-        HeightOnly(BARLINE_Y_SPACING),
-    )
-    .draw_to_frame(frame);
+/// Returns the width of the rendered note
+fn render_note(x: f32, note: &NoteOrRest, frame: &mut Frame) -> f32 {
+    let mut stem_down = false;
+
+    match note.pitch {
+        None => match note.duration {
+            1 => {
+                draw_rect_rest(
+                    frame,
+                    BARLINE_Y_SPACING / 2.,
+                    Point::new(x, BARLINE_Y_SPACING * 1.25),
+                );
+            }
+            2 => {
+                draw_rect_rest(
+                    frame,
+                    BARLINE_Y_SPACING / 2.,
+                    Point::new(x, BARLINE_Y_SPACING * 1.75),
+                );
+            }
+            3 => {
+                draw_quarter_rest(
+                    frame,
+                    BARLINE_Y_SPACING * 2.5,
+                    Point::new(x, BARLINE_Y_SPACING * 2.),
+                );
+            }
+            _ => todo!(),
+        },
+        Some(pitch) => {
+            let center = Point::new(x, pitch_to_y_offset(&pitch));
+            let stem_direction = if center.y > 2. * BARLINE_Y_SPACING {
+                StemDirection::UP
+            } else {
+                stem_down = true;
+                StemDirection::DOWN
+            };
+            draw_note(
+                frame,
+                note.duration,
+                center,
+                BARLINE_Y_SPACING,
+                stem_direction,
+            );
+        }
+    }
+
+    (match note.duration {
+        1 => 8.,
+        2 => 4.,
+        3 => 3.,
+        _ => {
+            if stem_down {
+                2.
+            } else {
+                3.
+            }
+        }
+    }) * BARLINE_Y_SPACING
 }
 
 // Barlines not included
 // Returns the width of the rendered bar
-fn render_bar(mut x: f32, bar: &Bar, frame: &mut Frame) -> f32 {
+fn render_bar(x: f32, bar: &Bar, frame: &mut Frame) -> f32 {
+    let mut x_ = x;
     for note in bar.notes.iter() {
-        render_note(x, note, frame);
-        x += duration_to_width(note.duration)
+        let w = render_note(x_, note, frame);
+        x_ += w;
     }
-    x
-}
 
-fn duration_to_width(duration: u8) -> f32 {
-    20. * 1. / (4. + duration as f32)
+    let barline_path = Path::line(Point::new(x_, 0.), Point::new(x_, 4. * BARLINE_Y_SPACING));
+    frame.stroke(&barline_path, canvas::Stroke::default());
+
+    x_ - x
 }
 
 fn y_offset_to_pitch(y: f32) -> Pitch {
@@ -225,14 +264,10 @@ impl canvas::Program<Message> for Staff {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
-        let sample_bar: Bar = Bar {
-            notes: vec![NoteOrRest {
-                pitch: Some((PitchClass::E, 4)),
-                duration: 1,
-            }],
-        };
-
         let geom = self.cache.draw(renderer, bounds.size(), |frame| {
+            // TODO: This frame translation down kinda sucks, think about a way that scales to
+            // multiple staffs
+            frame.translate(Vector::new(0., 30.));
             let bar_lines: &[canvas::Path; 5] = match &state.bar_lines {
                 Some(bar_lines) => bar_lines,
                 None => &create_bar_lines(&bounds),
@@ -250,7 +285,15 @@ impl canvas::Program<Message> for Staff {
             );
             treble_clef.draw_to_frame(frame);
 
-            render_bar(100., &sample_bar, frame);
+            // How much space to give after a bar
+            const BAR_PADDING: f32 = 2. * BARLINE_Y_SPACING;
+            {
+                let mut x = 100.;
+                for bar in self.bars.iter() {
+                    let width = render_bar(x, &bar, frame);
+                    x += width + BAR_PADDING;
+                }
+            }
 
             // let note = |x, pitch| {
             //     CanvasSVG::new(
@@ -276,8 +319,8 @@ impl canvas::Program<Message> for Staff {
             //     None => (),
             // }
 
-            let circle = canvas::Path::circle(Point { x: 0., y: 0. }, 5.);
-            frame.fill(&circle, Color::BLACK);
+            // let circle = canvas::Path::circle(Point { x: 0., y: 0. }, 5.);
+            // frame.fill(&circle, Color::BLACK);
         });
 
         vec![geom]

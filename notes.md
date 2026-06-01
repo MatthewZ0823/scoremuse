@@ -35,3 +35,5 @@ data-structures I would use here would be similar to those of text editors, so
 I started researching those
 
 https://cdacamar.github.io/data%20structures/algorithms/benchmarking/text%20editors/c++/editor-data-structures/
+
+Just kidding, I'm not going to do any advanced datastructures, just the simplest ones I can think of that can model what I need. Right now I can render a simple bar, and have a better feel of the canvas module. Let's work on rendering multiple bars

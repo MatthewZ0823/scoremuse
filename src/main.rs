@@ -1,3 +1,4 @@
+use crate::staff::{Bar, NoteOrRest, PitchClass};
 use crate::staff::{Pitch, Staff};
 use iced::Color;
 use iced::Element;
@@ -6,15 +7,44 @@ use iced::widget::canvas;
 use iced::widget::{button, column, text};
 
 mod canvas_svg;
-mod fraction;
+mod note;
 mod staff;
 
 const DEBUG: bool = true;
 
-#[derive(Default)]
 struct App {
     value: i64,
     staff: Staff,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        let mut staff = Staff::default();
+        staff.bars = vec![
+            Bar::new(vec![
+                NoteOrRest::new(Some((PitchClass::E, 5)), 2),
+                NoteOrRest::new(Some((PitchClass::G, 4)), 2),
+            ]),
+            Bar::new(vec![
+                NoteOrRest::new(Some((PitchClass::F, 4)), 3),
+                NoteOrRest::new(Some((PitchClass::G, 4)), 3),
+                NoteOrRest::new(Some((PitchClass::A, 4)), 2),
+            ]),
+            Bar::new(vec![
+                NoteOrRest::new(None, 2),
+                NoteOrRest::new(Some((PitchClass::F, 4)), 4),
+                NoteOrRest::new(Some((PitchClass::E, 5)), 5),
+                NoteOrRest::new(Some((PitchClass::F, 4)), 5),
+                NoteOrRest::new(None, 3),
+            ]),
+            Bar::new(vec![NoteOrRest::new(None, 1)]),
+        ];
+
+        App {
+            value: 0,
+            staff: staff,
+        }
+    }
 }
 
 impl App {
@@ -26,7 +56,7 @@ impl App {
             Message::Decrement => {
                 self.value -= 1;
             }
-            Message::AddNote(note) => {
+            Message::AddNote(_note) => {
                 // self.staff.notes.push(note);
                 self.staff.redraw();
             }

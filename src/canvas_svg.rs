@@ -3,6 +3,7 @@ use iced::{
     widget::{canvas::Frame, svg::Handle},
 };
 
+#[allow(dead_code)]
 pub enum Positioning {
     Centered(Point<f32>),
     TopLeft(Point<f32>),
