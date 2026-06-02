@@ -9,7 +9,7 @@ use iced::{Point, Rectangle, Renderer, Theme, Vector, mouse};
 
 use crate::Message;
 
-const BARLINE_Y_SPACING: f32 = 20.;
+const BARLINE_Y_SPACING: f32 = 15.;
 const NOTE_Y_SPACING: f32 = BARLINE_Y_SPACING / 2.;
 
 const TREBLE_CLEF_ASPECT_RATIO: f32 = 95.116 / 153.12;
@@ -28,7 +28,7 @@ impl Staff {
 }
 
 #[derive(Default)]
-pub struct StaffState {
+pub struct State {
     bar_lines: Option<[canvas::Path; 5]>,
     hovering: Option<Pitch>,
 }
@@ -203,7 +203,7 @@ fn create_bar_lines(bounds: &Rectangle) -> [canvas::Path; 5] {
 }
 
 impl canvas::Program<Message> for Staff {
-    type State = StaffState;
+    type State = State;
 
     fn update(
         &self,

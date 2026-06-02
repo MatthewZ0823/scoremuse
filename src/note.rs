@@ -338,7 +338,7 @@ fn draw_stem(
         b.close();
     });
 
-    let stem_stroke = canvas::Stroke::default().with_width(2.);
+    let stem_stroke = canvas::Stroke::default().with_width(height * 0.15);
     frame.stroke(&stem_path, stem_stroke);
 
     for i in 0..num_tails {
