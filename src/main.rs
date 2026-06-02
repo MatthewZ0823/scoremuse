@@ -58,7 +58,7 @@ impl App {
             }
             Message::AddNote(_note) => {
                 // self.staff.notes.push(note);
-                self.staff.redraw();
+                // self.staff.redraw();
             }
         }
     }

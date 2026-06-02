@@ -1,5 +1,6 @@
 use core::f32;
 use std::array::from_fn;
+use std::rc::Rc;
 
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
 use crate::note::{StemDirection, draw_note, draw_quarter_rest, draw_rect_rest};
@@ -17,20 +18,25 @@ const TREBLE_CLEF_PATH: &str = "src/assets/treble_clef.svg";
 
 #[derive(Debug, Default)]
 pub struct Staff {
-    cache: canvas::Cache,
     pub bars: Vec<Bar>,
-}
-
-impl Staff {
-    pub fn redraw(&self) {
-        self.cache.clear();
-    }
 }
 
 #[derive(Default)]
 pub struct State {
+    staff_cache: StaffCache,
     bar_lines: Option<[canvas::Path; 5]>,
     hovering: Option<Pitch>,
+}
+
+#[derive(Default)]
+struct StaffCache {
+    cache: canvas::Cache,
+    bar_caches: Vec<BarCache>,
+}
+
+struct BarCache {
+    width: f32,
+    bar: Rc<Bar>,
 }
 
 #[allow(dead_code)]
