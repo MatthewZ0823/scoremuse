@@ -1,6 +1,5 @@
 use core::f32;
 use std::array::from_fn;
-use std::rc::Rc;
 
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
 use crate::note::{StemDirection, draw_note, draw_quarter_rest, draw_rect_rest};
@@ -18,39 +17,40 @@ const TREBLE_CLEF_PATH: &str = "src/assets/treble_clef.svg";
 
 #[derive(Debug, Default)]
 pub struct Staff {
+    cache: canvas::Cache,
     pub bars: Vec<Bar>,
 }
 
 #[derive(Default)]
 pub struct State {
-    staff_cache: StaffCache,
     bar_lines: Option<[canvas::Path; 5]>,
     hovering: Option<Pitch>,
 }
 
-#[derive(Default)]
-struct StaffCache {
-    cache: canvas::Cache,
-    bar_caches: Vec<BarCache>,
-}
-
-struct BarCache {
-    width: f32,
-    bar: Rc<Bar>,
-}
-
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub enum PitchClass {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
+    C = 0,
+    D = 1,
+    E = 2,
+    F = 3,
+    G = 4,
+    A = 5,
+    B = 6,
 }
-pub type Pitch = (PitchClass, u8);
+
+#[derive(PartialEq, Eq)]
+pub struct Pitch {
+    pitch_class: PitchClass,
+    octave: u8,
+}
+
+impl Ord for Pitch {
+    /// Lower pitched notes are "less than" higher pitched ones
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        todo!()
+    }
+}
 
 #[derive(Debug)]
 pub struct NoteOrRest {
@@ -58,6 +58,32 @@ pub struct NoteOrRest {
     pitch: Option<Pitch>,
     // 1 -> Whole Note, 2 -> Half Note, 3 - Quarter Note, ...
     duration: u8,
+}
+
+impl NoteOrRest {
+    pub fn get_width(self: Self) -> f32 {
+        let width_factor = match self.duration {
+            1 => 8.,
+            2 => 4.,
+            3 => 3.,
+            _ => {
+                if stem_down {
+                    2.
+                } else {
+                    3.
+                }
+            }
+        };
+
+        width_factor * BARLINE_Y_SPACING
+    }
+
+    fn stem_down(self: Self) -> bool {
+        match self.pitch {
+            Some(_) => todo!(),
+            None => todo!(),
+        }
+    }
 }
 
 impl NoteOrRest {
@@ -73,6 +99,7 @@ impl NoteOrRest {
 pub struct Bar {
     // notes should be ordered by start
     notes: Vec<NoteOrRest>,
+    width: f32,
 }
 
 impl Bar {
@@ -127,19 +154,6 @@ fn render_note(x: f32, note: &NoteOrRest, frame: &mut Frame) -> f32 {
             );
         }
     }
-
-    (match note.duration {
-        1 => 8.,
-        2 => 4.,
-        3 => 3.,
-        _ => {
-            if stem_down {
-                2.
-            } else {
-                3.
-            }
-        }
-    }) * BARLINE_Y_SPACING
 }
 
 // Barlines not included
