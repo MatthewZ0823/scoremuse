@@ -51,7 +51,7 @@ impl CanvasSVG {
         }
     }
 
-    pub fn draw_to_frame(self, frame: &mut Frame) {
+    pub fn draw(self, frame: &mut Frame) {
         let handle = Handle::from_path(self.path);
         let bounds = Rectangle::new(self.top_left, self.size);
         frame.draw_svg(bounds, &handle);

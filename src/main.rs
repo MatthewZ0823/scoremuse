@@ -1,5 +1,5 @@
-use crate::staff::{Bar, NoteOrRest, PitchClass};
-use crate::staff::{Pitch, Staff};
+use crate::pitch::{Pitch, PitchClass};
+use crate::staff::{Bar, NoteOrRest, Staff};
 use iced::Color;
 use iced::Element;
 use iced::Fill;
@@ -8,9 +8,10 @@ use iced::widget::{button, column, text};
 
 mod canvas_svg;
 mod note;
+mod pitch;
 mod staff;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 struct App {
     value: i64,
@@ -22,19 +23,19 @@ impl Default for App {
         let mut staff = Staff::default();
         staff.bars = vec![
             Bar::new(vec![
-                NoteOrRest::new(Some((PitchClass::E, 5)), 2),
-                NoteOrRest::new(Some((PitchClass::G, 4)), 2),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 2),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 2),
             ]),
             Bar::new(vec![
-                NoteOrRest::new(Some((PitchClass::F, 4)), 3),
-                NoteOrRest::new(Some((PitchClass::G, 4)), 3),
-                NoteOrRest::new(Some((PitchClass::A, 4)), 2),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 3),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 3),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 2),
             ]),
             Bar::new(vec![
                 NoteOrRest::new(None, 2),
-                NoteOrRest::new(Some((PitchClass::F, 4)), 4),
-                NoteOrRest::new(Some((PitchClass::E, 5)), 5),
-                NoteOrRest::new(Some((PitchClass::F, 4)), 5),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 5),
+                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 5),
                 NoteOrRest::new(None, 3),
             ]),
             Bar::new(vec![NoteOrRest::new(None, 1)]),
@@ -59,6 +60,11 @@ impl App {
             Message::AddNote(_note) => {
                 // self.staff.notes.push(note);
                 // self.staff.redraw();
+            }
+            Message::AddBar => {
+                self.staff
+                    .bars
+                    .push(Bar::new(vec![NoteOrRest::new(None, 1)]));
             }
         }
     }
@@ -94,6 +100,7 @@ enum Message {
     Increment,
     Decrement,
     AddNote(Pitch),
+    AddBar,
 }
 
 fn main() -> iced::Result {
