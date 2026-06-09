@@ -1,49 +1,57 @@
+use crate::bar::Bar;
+use crate::note_or_rest::NoteOrRest;
 use crate::pitch::{Pitch, PitchClass};
-use crate::staff::{Bar, NoteOrRest, Staff};
+use crate::staff::{Staff, StaffEl, StaffIndex};
 use iced::Color;
 use iced::Element;
 use iced::Fill;
 use iced::widget::canvas;
 use iced::widget::{button, column, text};
 
+mod bar;
 mod canvas_svg;
-mod note;
+mod colors;
+mod constants;
+mod note_or_rest;
 mod pitch;
 mod staff;
+mod utils;
 
 const DEBUG: bool = false;
 
 struct App {
     value: i64,
-    staff: Staff,
+    staff: StaffEl,
 }
 
 impl Default for App {
     fn default() -> Self {
-        let mut staff = Staff::default();
-        staff.bars = vec![
-            Bar::new(vec![
-                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 2),
-                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 2),
-            ]),
-            Bar::new(vec![
-                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 3),
-                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 3),
-                NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 2),
-            ]),
-            Bar::new(vec![
-                NoteOrRest::new(None, 2),
-                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
-                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 5),
-                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 5),
-                NoteOrRest::new(None, 3),
-            ]),
-            Bar::new(vec![NoteOrRest::new(None, 1)]),
-        ];
+        let staff = Staff {
+            bars: vec![
+                Bar::new(vec![
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 2),
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 2),
+                ]),
+                Bar::new(vec![
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 3),
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 3),
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 2),
+                ]),
+                Bar::new(vec![
+                    NoteOrRest::new(None, 2),
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 5),
+                    NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 5),
+                    NoteOrRest::new(None, 3),
+                ]),
+                Bar::new(vec![NoteOrRest::new(None, 1)]),
+            ],
+        };
+        let staff_el = StaffEl::new(staff);
 
         App {
             value: 0,
-            staff: staff,
+            staff: staff_el,
         }
     }
 }
@@ -57,14 +65,13 @@ impl App {
             Message::Decrement => {
                 self.value -= 1;
             }
-            Message::AddNote(_note) => {
-                // self.staff.notes.push(note);
-                // self.staff.redraw();
-            }
             Message::AddBar => {
-                self.staff
-                    .bars
-                    .push(Bar::new(vec![NoteOrRest::new(None, 1)]));
+                self.staff.add_bar();
+                self.staff.redraw();
+            }
+            Message::SetNote(staff_index, pitch) => {
+                self.staff.set_note(&staff_index, pitch);
+                self.staff.redraw();
             }
         }
     }
@@ -99,7 +106,7 @@ impl App {
 enum Message {
     Increment,
     Decrement,
-    AddNote(Pitch),
+    SetNote(StaffIndex, Pitch),
     AddBar,
 }
 

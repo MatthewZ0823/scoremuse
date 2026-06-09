@@ -39,3 +39,5 @@ https://cdacamar.github.io/data%20structures/algorithms/benchmarking/text%20edit
 Just kidding, I'm not going to do any advanced datastructures, just the simplest ones I can think of that can model what I need. Right now I can render a simple bar, and have a better feel of the canvas module. Let's work on rendering multiple bars
 
 Done rendering multiple bars, that was pretty easy.
+
+Note about the coordinate system, the origin of the staff is the top left corner, where the first barline is. +x is right, +y is down.

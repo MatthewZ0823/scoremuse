@@ -1,7 +1,11 @@
 use core::f32;
+use std::cmp::min;
 
+use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
-use crate::note::{StemDirection, draw_note, draw_quarter_rest, draw_rect_rest};
+use crate::colors::HIGHLIGHT_COLOR;
+use crate::constants::BARLINE_Y_SPACING;
+use crate::note_or_rest::NoteOrRest;
 use crate::pitch::{Pitch, PitchClass};
 use iced::widget::Action;
 use iced::widget::canvas::Style::Gradient;
@@ -12,9 +16,7 @@ use iced::{Color, Point, Rectangle, Renderer, Theme, Vector, mouse};
 use crate::Message;
 
 const TOP_PADDIING: f32 = 30.;
-const BARLINE_Y_SPACING: f32 = 15.;
 // Padding in front of every bar before the first note
-const BAR_PADDING: f32 = 2. * BARLINE_Y_SPACING;
 const PREAMBLE_WIDTH: f32 = 6. * BARLINE_Y_SPACING;
 const NOTE_Y_SPACING: f32 = BARLINE_Y_SPACING / 2.;
 
@@ -23,139 +25,131 @@ const TREBLE_CLEF_PATH: &str = "src/assets/treble_clef.svg";
 
 #[derive(Debug, Default)]
 pub struct Staff {
-    cache: canvas::Cache,
+    // The bars should be sorted by the order they come in the music
     pub bars: Vec<Bar>,
 }
 
-impl Staff {
-    pub fn get_width(self: &Self) -> f32 {
-        self.bars.iter().map(|b| b.get_width()).sum::<f32>() + PREAMBLE_WIDTH
+pub struct StaffEl {
+    // The BarEls should be sorted by the order they come in the music and are drawn
+    bars: Vec<BarEl>,
+    cache: canvas::Cache,
+    // Invariant: `width` should be the rendered width of `staff`
+    width: f32,
+}
+
+impl StaffEl {
+    pub fn new(staff: Staff) -> Self {
+        let bars: Vec<BarEl> = staff
+            .bars
+            .into_iter()
+            .scan(PREAMBLE_WIDTH, |x, bar| {
+                let b = BarEl::new(bar, *x);
+                *x += b.get_width();
+                Some(b)
+            })
+            .collect();
+
+        let width = bars.last().map_or(0.0, |b| b.get_x() + b.get_width());
+
+        StaffEl {
+            bars,
+            cache: canvas::Cache::default(),
+            width,
+        }
+    }
+
+    pub fn get_width(&self) -> f32 {
+        self.width
+    }
+
+    pub fn add_bar(self: &mut Self) {
+        let new_bar = Bar::new(vec![NoteOrRest::new(None, 1)]);
+        let new_el = BarEl::new(new_bar, self.width);
+        self.width += new_el.get_width();
+        self.bars.push(new_el);
+    }
+
+    pub fn set_note(self: &mut Self, staff_index: &StaffIndex, pitch: Pitch) {
+        let bar = &mut self.bars[staff_index.bar_index];
+        let w = bar.get_width();
+        bar.set_note(staff_index.note_index, pitch);
+        let dw = bar.get_width() - w;
+        for i in staff_index.bar_index + 1..self.bars.len() {
+            self.bars[i].translate_x(dw);
+        }
+        self.width += dw;
+    }
+
+    pub fn redraw(&mut self) {
+        self.cache.clear();
     }
 }
 
 #[derive(Default)]
 pub struct State {
-    hovering: Option<Pitch>,
+    staff_interaction: StaffInteraction,
     hovering_new_bar: bool,
     new_bar_button_bounds: Rectangle,
 }
 
-#[derive(Debug)]
-pub struct NoteOrRest {
-    // When pitch is None its a rest
-    pitch: Option<Pitch>,
-    // 1 -> Whole Note, 2 -> Half Note, 3 - Quarter Note, ...
-    duration: u8,
+#[derive(Debug, Default)]
+enum StaffInteraction {
+    #[default]
+    None,
+    // Hovering a note
+    Hovering(StaffIndex),
+    // Selected note at `NoteIndex` and mouse is hovering `Pitch`
+    Selected(StaffIndex, Pitch),
 }
 
-impl NoteOrRest {
-    pub fn get_width(self: &Self) -> f32 {
-        let width_factor = match self.duration {
-            1 => 8.,
-            2 => 4.,
-            3 => 3.,
-            _ => {
-                if self.stem_down() {
-                    2.
-                } else {
-                    3.
-                }
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct StaffIndex {
+    bar_index: usize,
+    note_index: usize,
+}
+
+// Figure out which note the cursor is hovering over
+//
+// The cursor_pos should be given relative to the staff coordinates
+// Returns the note that has the largest x value smaller than the cursor's x
+// if the cursor is withing bounds of that note
+fn get_hovering(cursor_pos: &Point, staff: &StaffEl) -> Option<StaffIndex> {
+    let possible_bar_idx = min(
+        staff.bars.partition_point(|bar| {
+            bar.get_notes()
+                .last()
+                .map_or(true, |last| last.get_left_bound() < cursor_pos.x)
+        }),
+        staff.bars.len() - 1,
+    );
+
+    let idx = staff.bars[possible_bar_idx]
+        .get_notes()
+        .partition_point(|note| note.get_left_bound() < cursor_pos.x);
+
+    if idx == 0 {
+        // If every element in the possible bar is too far to the right
+        // Then keep looking back for the next largest element
+        for i in (0..possible_bar_idx).rev() {
+            let notes = staff.bars[i].get_notes();
+            let l = notes.len();
+            if l != 0 && cursor_pos.x < notes[l - 1].get_right_bound() {
+                return Some({
+                    StaffIndex {
+                        bar_index: i,
+                        note_index: l - 1,
+                    }
+                });
             }
-        };
-
-        width_factor * BARLINE_Y_SPACING
-    }
-
-    fn stem_down(self: &Self) -> bool {
-        match &self.pitch {
-            Some(pitch) => *pitch > Pitch::new(PitchClass::B, 4),
-            None => false,
         }
-    }
-}
-
-impl NoteOrRest {
-    pub fn new(pitch: Option<Pitch>, duration: u8) -> Self {
-        NoteOrRest {
-            pitch: pitch,
-            duration: duration,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Bar {
-    // notes should be ordered by start
-    notes: Vec<NoteOrRest>,
-    width: f32,
-}
-
-impl Bar {
-    pub fn new(notes: Vec<NoteOrRest>) -> Self {
-        let width = notes.iter().map(|n| n.get_width()).sum::<f32>() + BAR_PADDING;
-        Bar { notes, width }
+    } else if staff.bars[possible_bar_idx].get_notes()[idx - 1].get_right_bound() >= cursor_pos.x {
+        return Some(StaffIndex {
+            bar_index: possible_bar_idx,
+            note_index: idx - 1,
+        });
     }
 
-    pub fn get_width(self: &Self) -> f32 {
-        self.width
-    }
-}
-
-/// Returns the width of the rendered note
-fn render_note(x: f32, note: &NoteOrRest, frame: &mut Frame) {
-    match &note.pitch {
-        None => match note.duration {
-            1 => {
-                draw_rect_rest(
-                    frame,
-                    BARLINE_Y_SPACING / 2.,
-                    Point::new(x, BARLINE_Y_SPACING * 1.25),
-                );
-            }
-            2 => {
-                draw_rect_rest(
-                    frame,
-                    BARLINE_Y_SPACING / 2.,
-                    Point::new(x, BARLINE_Y_SPACING * 1.75),
-                );
-            }
-            3 => {
-                draw_quarter_rest(
-                    frame,
-                    BARLINE_Y_SPACING * 2.5,
-                    Point::new(x, BARLINE_Y_SPACING * 2.),
-                );
-            }
-            _ => todo!(),
-        },
-        Some(pitch) => {
-            let center = Point::new(x, pitch_to_y_offset(&pitch));
-            let stem_direction = if center.y > 2. * BARLINE_Y_SPACING {
-                StemDirection::UP
-            } else {
-                StemDirection::DOWN
-            };
-            draw_note(
-                frame,
-                note.duration,
-                center,
-                BARLINE_Y_SPACING,
-                stem_direction,
-            );
-        }
-    }
-}
-
-// Barlines not included
-fn render_bar(x: f32, bar: &Bar, frame: &mut Frame) {
-    let mut x_ = x + BAR_PADDING;
-    for note in bar.notes.iter() {
-        render_note(x_, note, frame);
-        x_ += note.get_width();
-    }
-
-    let barline_path = Path::line(Point::new(x_, 0.), Point::new(x_, 4. * BARLINE_Y_SPACING));
-    frame.stroke(&barline_path, canvas::Stroke::default());
+    return None;
 }
 
 fn y_offset_to_pitch(y: f32) -> Pitch {
@@ -179,7 +173,7 @@ fn y_offset_to_pitch(y: f32) -> Pitch {
     Pitch::new(pitch_class, octave)
 }
 
-fn pitch_to_y_offset(pitch: &Pitch) -> f32 {
+pub fn pitch_to_y_offset(pitch: &Pitch) -> f32 {
     let Pitch {
         pitch_class,
         octave,
@@ -211,7 +205,7 @@ fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, stroke: Stroke) {
     }
 }
 
-impl canvas::Program<Message> for Staff {
+impl canvas::Program<Message> for StaffEl {
     type State = State;
 
     fn update(
@@ -233,25 +227,43 @@ impl canvas::Program<Message> for Staff {
 
         match event {
             iced::Event::Mouse(event) => match event {
-                mouse::Event::ButtonPressed(button) => match button {
-                    mouse::Button::Left => {
-                        match cursor.position_in(bounds + Vector::new(0., TOP_PADDIING)) {
-                            Some(position) => {
+                mouse::Event::ButtonPressed(button) => {
+                    match button {
+                        mouse::Button::Left => {
+                            if let Some(position) =
+                                cursor.position_in(bounds + Vector::new(0., TOP_PADDIING))
+                            {
                                 if state.new_bar_button_bounds.contains(position) {
-                                    Some(canvas::Action::publish(Message::AddBar))
-                                } else {
-                                    None
+                                    return Some(canvas::Action::publish(Message::AddBar));
+                                }
+
+                                match state.staff_interaction {
+                                    StaffInteraction::None => (),
+                                    StaffInteraction::Hovering(staff_index) => {
+                                        // TODO: Rerender
+                                        state.staff_interaction = StaffInteraction::Selected(
+                                            staff_index,
+                                            y_offset_to_pitch(position.y),
+                                        );
+                                    }
+                                    StaffInteraction::Selected(staff_index, pitch) => {
+                                        state.staff_interaction = StaffInteraction::None;
+                                        return Some(canvas::Action::publish(Message::SetNote(
+                                            staff_index,
+                                            pitch,
+                                        )));
+                                    }
                                 }
                             }
-                            None => None,
                         }
+                        _ => return None,
                     }
-                    _ => None,
-                },
+                    return None;
+                }
                 mouse::Event::CursorMoved { .. } => {
                     match cursor.position_in(bounds + Vector::new(0., TOP_PADDIING)) {
                         Some(position) => {
-                            let should_rerender;
+                            let mut should_rerender;
 
                             if state.new_bar_button_bounds.contains(position) {
                                 should_rerender = !state.hovering_new_bar;
@@ -259,6 +271,38 @@ impl canvas::Program<Message> for Staff {
                             } else {
                                 should_rerender = state.hovering_new_bar;
                                 state.hovering_new_bar = false;
+                            }
+
+                            let hovering = get_hovering(&position, self);
+                            match &state.staff_interaction {
+                                StaffInteraction::None => {
+                                    if let Some(staff_index) = hovering {
+                                        should_rerender = true;
+                                        state.staff_interaction =
+                                            StaffInteraction::Hovering(staff_index);
+                                    }
+                                }
+                                StaffInteraction::Hovering(staff_index) => match hovering {
+                                    Some(hovering_index) => {
+                                        if hovering_index != *staff_index {
+                                            should_rerender = true;
+                                            state.staff_interaction =
+                                                StaffInteraction::Hovering(hovering_index);
+                                        }
+                                    }
+                                    None => {
+                                        should_rerender = true;
+                                        state.staff_interaction = StaffInteraction::None;
+                                    }
+                                },
+                                StaffInteraction::Selected(staff_index, pitch) => {
+                                    let p = y_offset_to_pitch(position.y);
+                                    if p != *pitch {
+                                        state.staff_interaction =
+                                            StaffInteraction::Selected(*staff_index, p);
+                                        should_rerender = true;
+                                    }
+                                }
                             }
 
                             if should_rerender {
@@ -286,39 +330,6 @@ impl canvas::Program<Message> for Staff {
             iced::Event::Touch(_event) => None,
             iced::Event::InputMethod(_event) => None,
         }
-
-        // if let iced::Event::Mouse(event) = event {
-        //     match event {
-        //         mouse::Event::CursorMoved { .. } => {
-        //             if let Some(cursor_position) = cursor.position_in(bounds) {
-        //                 state.hovering = y_offset_to_pitch(cursor_position.y).into();
-        //             } else {
-        //                 state.hovering = None;
-        //             }
-        //
-        //             self.cache.clear();
-        //             Some(Action::request_redraw())
-        //         }
-        //         mouse::Event::CursorLeft => {
-        //             state.hovering = None;
-        //             self.cache.clear();
-        //             Some(Action::request_redraw())
-        //         }
-        //         mouse::Event::ButtonPressed(button) => {
-        //             if *button == mouse::Button::Left {
-        //                 match state.hovering {
-        //                     Some(hovered) => Some(Action::publish(Message::AddNote(hovered))),
-        //                     None => None,
-        //                 }
-        //             } else {
-        //                 None
-        //             }
-        //         }
-        //         _ => None,
-        //     }
-        // } else {
-        //     None
-        // }
     }
 
     fn draw(
@@ -379,7 +390,7 @@ impl canvas::Program<Message> for Staff {
                 Stroke::default()
                     .with_width(3.)
                     .with_color(if state.hovering_new_bar {
-                        Color::from_rgb(0.2, 0.4, 0.9)
+                        HIGHLIGHT_COLOR
                     } else {
                         Color::from_rgb(0.4, 0.4, 0.4)
                     })
@@ -394,40 +405,26 @@ impl canvas::Program<Message> for Staff {
             );
             treble_clef.draw(frame);
 
-            {
-                let mut x = PREAMBLE_WIDTH;
-                for bar in self.bars.iter() {
-                    render_bar(x, &bar, frame);
-                    x += bar.get_width();
-                }
+            for (i, bar) in self.bars.iter().enumerate() {
+                let bar_interaction = match &state.staff_interaction {
+                    StaffInteraction::None => BarInteraction::None,
+                    StaffInteraction::Hovering(staff_index) => {
+                        if staff_index.bar_index == i {
+                            BarInteraction::Hovering(staff_index.note_index)
+                        } else {
+                            BarInteraction::None
+                        }
+                    }
+                    StaffInteraction::Selected(staff_idx, selected_pitch) => {
+                        if staff_idx.bar_index == i {
+                            BarInteraction::Selected(staff_idx.note_index, *selected_pitch)
+                        } else {
+                            BarInteraction::None
+                        }
+                    }
+                };
+                bar.draw(frame, &bar_interaction);
             }
-
-            // let note = |x, pitch| {
-            //     CanvasSVG::new(
-            //         FILLED_NOTE_HEAD_PATH,
-            //         FILLED_NOTE_HEAD_ASPECT_RATIO,
-            //         Centered(Point::new(x, pitch_to_y_offset(pitch))),
-            //         HeightOnly(BARLINE_Y_SPACING * 1.1),
-            //     )
-            // };
-            //
-            // {
-            //     let mut x = 100.;
-            //     self.notes.iter().for_each(|pitch| {
-            //         note(x, pitch).draw_to_frame(frame);
-            //         x += 10.;
-            //     });
-            // }
-
-            // match state.hovering {
-            //     Some(hovered) => {
-            //         note(100., &hovered).draw_to_frame(frame);
-            //     }
-            //     None => (),
-            // }
-
-            // let circle = canvas::Path::circle(Point { x: 0., y: 0. }, 5.);
-            // frame.fill(&circle, Color::BLACK);
         });
 
         vec![geom]

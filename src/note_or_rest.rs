@@ -1,13 +1,191 @@
 use std::ops::{Div, Mul};
 
 use iced::Size;
-use iced::widget::canvas;
 use iced::widget::canvas::path::lyon_path::geom::euclid::{Transform2D, Vector2D};
+use iced::widget::canvas::{self, Style};
 use iced::{
     Color, Point, Radians, Vector,
     widget::canvas::fill::Rule,
     widget::canvas::{Fill, Frame, Path, path::arc::Elliptical},
 };
+
+use crate::colors::HIGHLIGHT_COLOR;
+use crate::constants::BARLINE_Y_SPACING;
+use crate::pitch::{Pitch, PitchClass};
+use crate::staff::pitch_to_y_offset;
+use crate::utils::style_from_color;
+
+#[derive(Debug)]
+pub struct NoteOrRest {
+    // When pitch is None its a rest
+    pitch: Option<Pitch>,
+    // 1 -> Whole Note, 2 -> Half Note, 3 - Quarter Note, ...
+    duration: u8,
+}
+
+impl NoteOrRest {
+    pub fn new(pitch: Option<Pitch>, duration: u8) -> Self {
+        NoteOrRest {
+            pitch: pitch,
+            duration: duration,
+        }
+    }
+}
+
+pub struct NoteOrRestEl {
+    note_or_rest: NoteOrRest,
+    // X-Coordinate of the note head/rest center
+    x: f32,
+    // How much space is on the left of the note's center
+    // TODO: Don't like how this depends on whether its the first note or not
+    left_width: f32,
+    // How much space to put after the note
+    right_width: f32,
+}
+
+pub enum NoteInteraction {
+    None,
+    // Hovering this note
+    Hovering,
+    // Selected this note and mouse is hovering pitch
+    Selected(Pitch),
+}
+
+impl NoteOrRestEl {
+    // x is the left-most x coordinate of the note
+    // `is_first` iff the note is the first note of its bar
+    pub fn new(note_or_rest: NoteOrRest, x: f32, is_first: bool) -> Self {
+        let (left_width, right_width) = Self::compute_widths(&note_or_rest, is_first);
+        Self {
+            note_or_rest,
+            x: x + left_width,
+            left_width,
+            right_width,
+        }
+    }
+
+    // Returns (left_width, right_width)
+    fn compute_widths(note_or_rest: &NoteOrRest, is_first: bool) -> (f32, f32) {
+        (
+            (if is_first { 2. } else { 0.75 }) * BARLINE_Y_SPACING,
+            match note_or_rest.duration {
+                1 => 6.25,
+                2 => 3.25,
+                3 => 2.25,
+                _ => {
+                    if note_or_rest.pitch.map_or(false, |p| Self::stem_down(&p)) {
+                        1.25
+                    } else {
+                        2.25
+                    }
+                }
+            } * BARLINE_Y_SPACING,
+        )
+    }
+
+    fn stem_down(pitch: &Pitch) -> bool {
+        *pitch > Pitch::new(PitchClass::B, 4)
+    }
+
+    /// Gets the x-coordinate of the right bound
+    pub fn get_right_bound(self: &Self) -> f32 {
+        self.x + self.right_width
+    }
+
+    /// Gets the x-coordinate of the left bound
+    pub fn get_left_bound(self: &Self) -> f32 {
+        self.x - self.left_width
+    }
+
+    // Get the total width of the note
+    pub fn get_width(self: &Self) -> f32 {
+        self.left_width + self.right_width
+    }
+
+    pub fn translate_x(self: &mut Self, dx: f32) {
+        self.x += dx;
+    }
+
+    // Keeps the center the same
+    // Assuming only the right width might change on pitch change
+    pub fn set_pitch(self: &mut Self, pitch: Pitch) {
+        self.note_or_rest.pitch = Some(pitch);
+        (_, self.right_width) = Self::compute_widths(&self.note_or_rest, false);
+    }
+
+    pub fn draw(self: &Self, frame: &mut Frame, note_interaction: &NoteInteraction) {
+        let style = match note_interaction {
+            NoteInteraction::None => style_from_color(Color::BLACK),
+            NoteInteraction::Hovering | NoteInteraction::Selected(..) => {
+                style_from_color(HIGHLIGHT_COLOR)
+            }
+        };
+
+        // Draw the "selected/hover" note
+        if let NoteInteraction::Selected(hovering_pitch) = note_interaction {
+            let stem_direction = if Self::stem_down(hovering_pitch) {
+                StemDirection::DOWN
+            } else {
+                StemDirection::UP
+            };
+
+            draw_note(
+                frame,
+                self.note_or_rest.duration,
+                Point::new(self.x, pitch_to_y_offset(hovering_pitch)),
+                BARLINE_Y_SPACING,
+                stem_direction,
+                style_from_color(Color::from_rgb(0.6, 0.6, 0.6)),
+            );
+        }
+
+        match &self.note_or_rest.pitch {
+            None => match self.note_or_rest.duration {
+                1 => {
+                    draw_rect_rest(
+                        frame,
+                        BARLINE_Y_SPACING / 2.,
+                        Point::new(self.x, BARLINE_Y_SPACING * 1.25),
+                        style,
+                    );
+                }
+                2 => {
+                    draw_rect_rest(
+                        frame,
+                        BARLINE_Y_SPACING / 2.,
+                        Point::new(self.x, BARLINE_Y_SPACING * 1.75),
+                        style,
+                    );
+                }
+                3 => {
+                    draw_quarter_rest(
+                        frame,
+                        BARLINE_Y_SPACING * 2.5,
+                        Point::new(self.x, BARLINE_Y_SPACING * 2.),
+                        style,
+                    );
+                }
+                _ => todo!(),
+            },
+            Some(pitch) => {
+                let center = Point::new(self.x, pitch_to_y_offset(&pitch));
+                let stem_direction = if Self::stem_down(pitch) {
+                    StemDirection::DOWN
+                } else {
+                    StemDirection::UP
+                };
+                draw_note(
+                    frame,
+                    self.note_or_rest.duration,
+                    center,
+                    BARLINE_Y_SPACING,
+                    stem_direction,
+                    style,
+                );
+            }
+        }
+    }
+}
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum StemDirection {
@@ -16,27 +194,28 @@ pub enum StemDirection {
 }
 
 /// Draws a note to `frame`, where the note head is centered at `center` and has height `height`
-pub fn draw_note(
+fn draw_note(
     frame: &mut Frame,
     duration: u8,
     center: Point,
     height: f32,
     stem_direction: StemDirection,
+    style: Style,
 ) {
     match duration {
-        1 => draw_whole_note_head(frame, height, center),
+        1 => draw_whole_note_head(frame, height, center, style),
         2 => {
-            draw_half_note_head(frame, height, center);
-            draw_stem(frame, height, center, stem_direction, 0);
+            draw_half_note_head(frame, height, center, style.clone());
+            draw_stem(frame, height, center, stem_direction, 0, style);
         }
         d => {
-            draw_filled_note_head(frame, height, center);
-            draw_stem(frame, height, center, stem_direction, d - 3);
+            draw_filled_note_head(frame, height, center, style.clone());
+            draw_stem(frame, height, center, stem_direction, d - 3, style);
         }
     }
 }
 
-fn draw_filled_note_head(frame: &mut Frame, height: f32, center: Point) {
+fn draw_filled_note_head(frame: &mut Frame, height: f32, center: Point, style: Style) {
     // Half-height of ellipse rotated at 15 degrees with radii 2,3
     const MAGIC: f32 = 2.0820510297634165775;
 
@@ -50,10 +229,14 @@ fn draw_filled_note_head(frame: &mut Frame, height: f32, center: Point) {
         });
     });
 
-    frame.fill(&filled_head_path, Color::BLACK);
+    let fill = Fill {
+        style: style.into(),
+        rule: Rule::NonZero,
+    };
+    frame.fill(&filled_head_path, fill);
 }
 
-fn draw_half_note_head(frame: &mut Frame, height: f32, center: Point) {
+fn draw_half_note_head(frame: &mut Frame, height: f32, center: Point, style: Style) {
     // Half-height of ellipse rotated at 15 degrees with radii 2,3
     const MAGIC: f32 = 2.0820510297634165775;
 
@@ -78,13 +261,13 @@ fn draw_half_note_head(frame: &mut Frame, height: f32, center: Point) {
     frame.fill(
         &half_head_path,
         Fill {
-            style: Color::BLACK.into(),
+            style: style.into(),
             rule: Rule::EvenOdd,
         },
     );
 }
 
-fn draw_whole_note_head(frame: &mut Frame, mut height: f32, center: Point) {
+fn draw_whole_note_head(frame: &mut Frame, mut height: f32, center: Point, style: Style) {
     height /= 2.;
 
     let whole_head_path: Path = Path::new(|b| {
@@ -108,13 +291,13 @@ fn draw_whole_note_head(frame: &mut Frame, mut height: f32, center: Point) {
     frame.fill(
         &whole_head_path,
         Fill {
-            style: Color::BLACK.into(),
+            style: style.into(),
             rule: Rule::EvenOdd,
         },
     );
 }
 
-pub fn draw_quarter_rest(frame: &mut Frame, mut height: f32, center: Point) {
+fn draw_quarter_rest(frame: &mut Frame, mut height: f32, center: Point, style: Style) {
     height /= 2.;
     let transform =
         Transform2D::scale(height, height).then_translate(Vector2D::new(center.x, center.y));
@@ -279,17 +462,25 @@ pub fn draw_quarter_rest(frame: &mut Frame, mut height: f32, center: Point) {
     })
     .transform(&transform);
 
-    frame.fill(&quarter_rest_path, Color::BLACK);
+    let fill = Fill {
+        style: style.into(),
+        rule: Rule::NonZero,
+    };
+    frame.fill(&quarter_rest_path, fill);
 }
 
-pub fn draw_rect_rest(frame: &mut Frame, height: f32, center: Point) {
+fn draw_rect_rest(frame: &mut Frame, height: f32, center: Point, style: Style) {
     let rect_rest_path: Path = Path::new(|b| {
         b.rectangle(
             Point::new(center.x - height * 1.25, center.y - height / 2.),
             Size::new(2.5 * height, height),
         );
     });
-    frame.fill(&rect_rest_path, Color::BLACK);
+    let fill = Fill {
+        style: style.into(),
+        rule: Rule::NonZero,
+    };
+    frame.fill(&rect_rest_path, fill);
 }
 
 // `height` and `center` are the height and center of the note that the stem is drawn on
@@ -299,6 +490,7 @@ fn draw_stem(
     center: Point,
     stem_direction: StemDirection,
     num_tails: u8,
+    style: Style,
 ) {
     let sign = match stem_direction {
         StemDirection::UP => 1.,
@@ -338,8 +530,17 @@ fn draw_stem(
         b.close();
     });
 
-    let stem_stroke = canvas::Stroke::default().with_width(height * 0.15);
+    let stem_stroke = canvas::Stroke {
+        width: height * 0.15,
+        style: style.clone(),
+        ..canvas::Stroke::default()
+    };
     frame.stroke(&stem_path, stem_stroke);
+
+    let fill = Fill {
+        style: style.clone(),
+        rule: Rule::NonZero,
+    };
 
     for i in 0..num_tails {
         let t = if stem_direction == StemDirection::DOWN {
@@ -352,6 +553,6 @@ fn draw_stem(
             stem_end.y + sign * (i as f32) * height,
         ));
 
-        frame.fill(&tail_path.transform(&t), Color::BLACK);
+        frame.fill(&tail_path.transform(&t), fill);
     }
 }
