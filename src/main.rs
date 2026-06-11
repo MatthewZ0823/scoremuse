@@ -1,12 +1,13 @@
 use crate::bar::Bar;
+use crate::constants::MUSIC_FONT;
 use crate::note_or_rest::NoteOrRest;
 use crate::pitch::{Pitch, PitchClass};
 use crate::staff::{Staff, StaffEl, StaffIndex};
 use iced::Color;
 use iced::Element;
 use iced::Fill;
-use iced::widget::canvas;
 use iced::widget::{button, column, text};
+use iced::widget::{canvas, svg};
 
 mod bar;
 mod canvas_svg;
@@ -81,13 +82,17 @@ impl App {
         let increment = button("+").on_press(Message::Increment);
         let decrement = button("-").on_press(Message::Decrement);
 
+        let half_note = svg("src/assets/half_note.svg").width(20.);
+
         // The number
         let counter = text(self.value).size(100);
 
         let staff = canvas(&self.staff).width(Fill).height(Fill);
 
+        let test = text("\u{E050}").font(MUSIC_FONT);
+
         // The layout
-        let interface: Element<_> = column![increment, counter, decrement, staff]
+        let interface: Element<_> = column![increment, counter, decrement, test, half_note, staff]
             .height(Fill)
             .width(Fill)
             .into();
@@ -111,7 +116,11 @@ enum Message {
 }
 
 fn main() -> iced::Result {
-    iced::run(App::update, App::view)
+    // iced::run(App::update, App::view)
+
+    iced::application(App::default, App::update, App::view)
+        .font(include_bytes!("../fonts/Bravura.otf").as_slice())
+        .run()
 }
 
 #[test]

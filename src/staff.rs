@@ -4,7 +4,7 @@ use std::cmp::min;
 use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
 use crate::colors::HIGHLIGHT_COLOR;
-use crate::constants::BARLINE_Y_SPACING;
+use crate::constants::{BARLINE_Y_SPACING, MUSIC_FONT};
 use crate::note_or_rest::NoteOrRest;
 use crate::pitch::{Pitch, PitchClass};
 use iced::widget::Action;
@@ -397,13 +397,13 @@ impl canvas::Program<Message> for StaffEl {
                     .with_line_cap(LineCap::Round),
             );
 
-            let treble_clef = CanvasSVG::new(
-                TREBLE_CLEF_PATH,
-                TREBLE_CLEF_ASPECT_RATIO,
-                TopLeft(Point::new(0., -1.65 * BARLINE_Y_SPACING)),
-                HeightOnly(7.5 * BARLINE_Y_SPACING),
-            );
-            treble_clef.draw(frame);
+            // let treble_clef = CanvasSVG::new(
+            //     TREBLE_CLEF_PATH,
+            //     TREBLE_CLEF_ASPECT_RATIO,
+            //     TopLeft(Point::new(0., -1.65 * BARLINE_Y_SPACING)),
+            //     HeightOnly(7.5 * BARLINE_Y_SPACING),
+            // );
+            // treble_clef.draw(frame);
 
             for (i, bar) in self.bars.iter().enumerate() {
                 let bar_interaction = match &state.staff_interaction {
@@ -425,6 +425,16 @@ impl canvas::Program<Message> for StaffEl {
                 };
                 bar.draw(frame, &bar_interaction);
             }
+
+            let mut my_text: canvas::Text = "\u{E050}".into();
+            my_text.font = MUSIC_FONT;
+            my_text.size = (4. * BARLINE_Y_SPACING).into();
+            my_text.align_y = iced::alignment::Vertical::Center;
+            my_text.position = Point::new(0., 3. * BARLINE_Y_SPACING);
+
+            my_text.draw_with(|path, color| {
+                frame.fill(&path, color);
+            });
         });
 
         vec![geom]
