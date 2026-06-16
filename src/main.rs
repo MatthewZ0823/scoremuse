@@ -1,18 +1,19 @@
 use crate::bar::Bar;
 use crate::constants::MUSIC_FONT;
+use crate::font::{FontMeta, load_font};
 use crate::note_or_rest::NoteOrRest;
 use crate::pitch::{Pitch, PitchClass};
 use crate::staff::{Staff, StaffEl, StaffIndex};
 use iced::Color;
 use iced::Element;
 use iced::Fill;
-use iced::widget::{button, column, text};
-use iced::widget::{canvas, svg};
+use iced::widget::{canvas, column, text};
 
 mod bar;
 mod canvas_svg;
 mod colors;
 mod constants;
+mod font;
 mod note_or_rest;
 mod pitch;
 mod staff;
@@ -20,117 +21,93 @@ mod utils;
 
 const DEBUG: bool = false;
 
+#[derive(Default)]
 struct App {
-    value: i64,
-    staff: StaffEl,
-}
-
-impl Default for App {
-    fn default() -> Self {
-        let staff = Staff {
-            bars: vec![
-                Bar::new(vec![
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 2),
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 2),
-                ]),
-                Bar::new(vec![
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 3),
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 3),
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 2),
-                ]),
-                Bar::new(vec![
-                    NoteOrRest::new(None, 2),
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 5),
-                    NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 5),
-                    NoteOrRest::new(None, 3),
-                ]),
-                Bar::new(vec![NoteOrRest::new(None, 1)]),
-            ],
-        };
-        let staff_el = StaffEl::new(staff);
-
-        App {
-            value: 0,
-            staff: staff_el,
-        }
-    }
+    staff: Option<StaffEl>, // None when loading font
 }
 
 impl App {
     fn update(&mut self, message: Message) {
-        match message {
-            Message::Increment => {
-                self.value += 1;
-            }
-            Message::Decrement => {
-                self.value -= 1;
-            }
-            Message::AddBar => {
-                self.staff.add_bar();
-                self.staff.redraw();
-            }
-            Message::SetNote(staff_index, pitch) => {
-                self.staff.set_note(&staff_index, pitch);
-                self.staff.redraw();
-            }
+        match &mut self.staff {
+            None => match message {
+                Message::FontLoaded(res) => {
+                    let font_meta = res.unwrap(); // TODO: Better error handling
+                    let staff = Staff {
+                        bars: vec![
+                            Bar::new(vec![
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 2),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 2),
+                            ]),
+                            Bar::new(vec![
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 3),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 3),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 2),
+                            ]),
+                            // Bar::new(vec![
+                            //     NoteOrRest::new(None, 2),
+                            //     NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
+                            //     NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 5),
+                            //     NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 5),
+                            //     NoteOrRest::new(None, 3),
+                            // ]),
+                            Bar::new(vec![NoteOrRest::new(None, 1)]),
+                        ],
+                    };
+                    self.staff = Some(StaffEl::new(staff, font_meta));
+                }
+                Message::SetNote(..) | Message::AddBar => (),
+            },
+            Some(staff) => match message {
+                Message::AddBar => {
+                    staff.add_bar();
+                    staff.redraw();
+                }
+                Message::SetNote(staff_index, pitch) => {
+                    staff.set_note(&staff_index, pitch);
+                    staff.redraw();
+                }
+                Message::FontLoaded(..) => (),
+            },
         }
     }
 
     fn view(&self) -> Element<'_, Message> {
-        // The buttons
-        let increment = button("+").on_press(Message::Increment);
-        let decrement = button("-").on_press(Message::Decrement);
+        match &self.staff {
+            Some(staff) => {
+                let staff_canvas = canvas(staff).width(Fill).height(Fill);
+                let test = text("\u{E0A2}\u{E0A3}\u{E0A4}").font(MUSIC_FONT);
 
-        let half_note = svg("src/assets/half_note.svg").width(20.);
+                // The layout
+                let interface: Element<_> =
+                    column![test, staff_canvas].height(Fill).width(Fill).into();
 
-        // The number
-        let counter = text(self.value).size(100);
+                let explained = if DEBUG {
+                    interface.explain(Color::BLACK)
+                } else {
+                    interface
+                };
 
-        let staff = canvas(&self.staff).width(Fill).height(Fill);
-
-        let test = text("\u{E050}").font(MUSIC_FONT);
-
-        // The layout
-        let interface: Element<_> = column![increment, counter, decrement, test, half_note, staff]
-            .height(Fill)
-            .width(Fill)
-            .into();
-
-        let explained = if DEBUG {
-            interface.explain(Color::BLACK)
-        } else {
-            interface
-        };
-
-        explained
+                explained
+            }
+            None => text("loading font...").into(),
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Message {
-    Increment,
-    Decrement,
+    FontLoaded(Result<FontMeta, font::Error>),
     SetNote(StaffIndex, Pitch),
     AddBar,
 }
 
-fn main() -> iced::Result {
-    // iced::run(App::update, App::view)
-
-    iced::application(App::default, App::update, App::view)
-        .font(include_bytes!("../fonts/Bravura.otf").as_slice())
-        .run()
+fn boot() -> (App, iced::Task<Message>) {
+    (
+        App::default(),
+        load_font("Bravura".to_string()).map(|m| Message::FontLoaded(m)),
+    )
 }
 
-#[test]
-fn it_counts_properly() {
-    let mut counter = App::default();
-    counter.value = 0;
-
-    counter.update(Message::Increment);
-    counter.update(Message::Increment);
-    counter.update(Message::Decrement);
-
-    assert_eq!(counter.value, 1);
+fn main() -> iced::Result {
+    iced::application(boot, App::update, App::view).run()
 }

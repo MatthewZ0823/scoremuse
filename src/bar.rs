@@ -1,4 +1,5 @@
 use crate::constants::BARLINE_Y_SPACING;
+use crate::font;
 use crate::note_or_rest::{NoteInteraction, NoteOrRest, NoteOrRestEl};
 use crate::pitch::Pitch;
 use iced::widget::canvas;
@@ -37,11 +38,11 @@ pub enum BarInteraction {
 
 impl BarEl {
     // `x` is the left bound of the bar
-    pub fn new(bar: Bar, x: f32) -> Self {
+    pub fn new(bar: Bar, x: f32, font: &font::FontMeta) -> Self {
         let mut note_els: Vec<NoteOrRestEl> = vec![];
         let mut x_ = x;
-        for (i, note) in bar.notes.into_iter().enumerate() {
-            let n = NoteOrRestEl::new(note, x_, i == 0);
+        for note in bar.notes.into_iter() {
+            let n = NoteOrRestEl::new(note, x_, font);
             x_ += n.get_width();
             note_els.push(n);
         }
@@ -57,7 +58,12 @@ impl BarEl {
         self.width
     }
 
-    pub fn draw(self: &Self, frame: &mut Frame, bar_interaction: &BarInteraction) {
+    pub fn draw(
+        self: &Self,
+        frame: &mut Frame,
+        bar_interaction: &BarInteraction,
+        font: &font::FontMeta,
+    ) {
         for (i, note) in self.notes.iter().enumerate() {
             let note_interaction = match bar_interaction {
                 BarInteraction::None => NoteInteraction::None,
@@ -76,7 +82,7 @@ impl BarEl {
                     }
                 }
             };
-            note.draw(frame, &note_interaction);
+            note.draw(frame, &note_interaction, font);
         }
 
         let barline_x = self.x + self.width;
@@ -91,10 +97,10 @@ impl BarEl {
         &self.notes
     }
 
-    pub fn set_note(&mut self, note_index: usize, pitch: Pitch) {
+    pub fn set_note(&mut self, note_index: usize, pitch: Pitch, font: &font::FontMeta) {
         let note = &mut self.notes[note_index];
         let w = note.get_width();
-        note.set_pitch(pitch);
+        note.set_pitch(pitch, font);
         let dw = note.get_width() - w;
 
         for i in (note_index + 1)..self.notes.len() {

@@ -1,8 +1,8 @@
 use core::f32;
 use std::cmp::min;
 
+use crate::FontMeta;
 use crate::bar::{Bar, BarEl, BarInteraction};
-use crate::canvas_svg::{CanvasSVG, Positioning::*, SizingMode::*};
 use crate::colors::HIGHLIGHT_COLOR;
 use crate::constants::{BARLINE_Y_SPACING, MUSIC_FONT};
 use crate::note_or_rest::NoteOrRest;
@@ -17,11 +17,9 @@ use crate::Message;
 
 const TOP_PADDIING: f32 = 30.;
 // Padding in front of every bar before the first note
-const PREAMBLE_WIDTH: f32 = 6. * BARLINE_Y_SPACING;
+const PREAMBLE_WIDTH: f32 = 1.;
+// const PREAMBLE_WIDTH: f32 = 6. * BARLINE_Y_SPACING;
 const NOTE_Y_SPACING: f32 = BARLINE_Y_SPACING / 2.;
-
-const TREBLE_CLEF_ASPECT_RATIO: f32 = 95.116 / 153.12;
-const TREBLE_CLEF_PATH: &str = "src/assets/treble_clef.svg";
 
 #[derive(Debug, Default)]
 pub struct Staff {
@@ -33,17 +31,18 @@ pub struct StaffEl {
     // The BarEls should be sorted by the order they come in the music and are drawn
     bars: Vec<BarEl>,
     cache: canvas::Cache,
+    font: FontMeta,
     // Invariant: `width` should be the rendered width of `staff`
     width: f32,
 }
 
 impl StaffEl {
-    pub fn new(staff: Staff) -> Self {
+    pub fn new(staff: Staff, font: FontMeta) -> Self {
         let bars: Vec<BarEl> = staff
             .bars
             .into_iter()
             .scan(PREAMBLE_WIDTH, |x, bar| {
-                let b = BarEl::new(bar, *x);
+                let b = BarEl::new(bar, *x, &font);
                 *x += b.get_width();
                 Some(b)
             })
@@ -53,6 +52,7 @@ impl StaffEl {
 
         StaffEl {
             bars,
+            font: font,
             cache: canvas::Cache::default(),
             width,
         }
@@ -64,7 +64,7 @@ impl StaffEl {
 
     pub fn add_bar(self: &mut Self) {
         let new_bar = Bar::new(vec![NoteOrRest::new(None, 1)]);
-        let new_el = BarEl::new(new_bar, self.width);
+        let new_el = BarEl::new(new_bar, self.width, &self.font);
         self.width += new_el.get_width();
         self.bars.push(new_el);
     }
@@ -72,7 +72,7 @@ impl StaffEl {
     pub fn set_note(self: &mut Self, staff_index: &StaffIndex, pitch: Pitch) {
         let bar = &mut self.bars[staff_index.bar_index];
         let w = bar.get_width();
-        bar.set_note(staff_index.note_index, pitch);
+        bar.set_note(staff_index.note_index, pitch, &self.font);
         let dw = bar.get_width() - w;
         for i in staff_index.bar_index + 1..self.bars.len() {
             self.bars[i].translate_x(dw);
@@ -173,35 +173,14 @@ fn y_offset_to_pitch(y: f32) -> Pitch {
     Pitch::new(pitch_class, octave)
 }
 
-pub fn pitch_to_y_offset(pitch: &Pitch) -> f32 {
-    let Pitch {
-        pitch_class,
-        octave,
-    } = pitch;
-
-    let class_offset = match pitch_class {
-        PitchClass::C => 0.,
-        PitchClass::D => 1.,
-        PitchClass::E => 2.,
-        PitchClass::F => 3.,
-        PitchClass::G => 4.,
-        PitchClass::A => 5.,
-        PitchClass::B => 6.,
-    };
-
-    5. * BARLINE_Y_SPACING
-        - class_offset * NOTE_Y_SPACING
-        - ((*octave as f32) - 4.) * 7. * NOTE_Y_SPACING
-}
-
-fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, stroke: Stroke) {
+fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, thickness: f32) {
     let spacing = bounds.height / 4.;
     for i in 0..5 {
         let y = i as f32 * spacing;
-        let from = Point::new(bounds.x, y);
-        let to = Point::new(bounds.x + bounds.width, y);
-        let path = canvas::Path::line(from, to);
-        frame.stroke(&path, stroke);
+        let from = Point::new(bounds.x, y - thickness / 2.);
+        // let to = Point::new(bounds.x + bounds.width, y);
+        let path = canvas::Path::rectangle(from, iced::Size::new(bounds.width, thickness));
+        frame.fill(&path, Color::BLACK);
     }
 }
 
@@ -336,107 +315,147 @@ impl canvas::Program<Message> for StaffEl {
         &self,
         state: &Self::State,
         renderer: &Renderer,
-        _theme: &Theme,
+        theme: &Theme,
         bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
+        let _theme: &Theme = theme;
+        let _cursor = cursor;
         let geom = self.cache.draw(renderer, bounds.size(), |frame| {
-            frame.translate(Vector::new(0., TOP_PADDIING));
-            let staff_bar_line_bounds = Rectangle {
-                x: 0.,
-                y: 0.,
-                width: self.get_width(),
-                height: 4. * BARLINE_Y_SPACING,
-            };
-            draw_bar_lines(frame, staff_bar_line_bounds, Stroke::default());
-
-            // new bar icon
-            let new_bar_stroke = Stroke {
-                style: Gradient(
-                    (Linear::new(
-                        Point::new(state.new_bar_button_bounds.x, 0.),
-                        Point::new(
-                            state.new_bar_button_bounds.x + state.new_bar_button_bounds.width,
-                            0.,
-                        ),
-                    )
-                    .add_stop(0., Color::from_rgb(0.4, 0.4, 0.4))
-                    .add_stop(1., Color::from_rgb(0.9, 0.9, 0.9)))
-                    .into(),
-                ),
-                width: 1.,
-                line_cap: LineCap::default(),
-                line_join: LineJoin::default(),
-                line_dash: LineDash::default(),
-            };
-            draw_bar_lines(frame, state.new_bar_button_bounds, new_bar_stroke);
-            frame.fill(
-                &Path::circle(
-                    state.new_bar_button_bounds.center(),
-                    BARLINE_Y_SPACING * 0.8,
-                ),
-                Color::from_rgb(1., 1., 1.),
-            );
-            let plus_path = Path::new(|b| {
-                let r = BARLINE_Y_SPACING * 0.4;
-                b.move_to(state.new_bar_button_bounds.center() + Vector::new(-r, 0.));
-                b.line_to(state.new_bar_button_bounds.center() + Vector::new(r, 0.));
-
-                b.move_to(state.new_bar_button_bounds.center() + Vector::new(0., -r));
-                b.line_to(state.new_bar_button_bounds.center() + Vector::new(0., r));
+            frame.with_save(|f| {
+                f.scale(1.);
+                for i in 1..12 {
+                    let t = canvas::Text {
+                        size: (50 + 10 * i).into(),
+                        position: Point::new(500. + 30. * i as f32, 1.),
+                        shaping: iced::widget::text::Shaping::Basic,
+                        font: self.font.font_iced,
+                        .."\u{E0A3}".into()
+                    };
+                    t.draw_with(|path, color| {
+                        f.fill(&path, Color::from_rgb(1., 0., 0.));
+                    });
+                }
             });
-            frame.stroke(
-                &plus_path,
-                Stroke::default()
-                    .with_width(3.)
-                    .with_color(if state.hovering_new_bar {
-                        HIGHLIGHT_COLOR
-                    } else {
-                        Color::from_rgb(0.4, 0.4, 0.4)
-                    })
-                    .with_line_cap(LineCap::Round),
-            );
 
-            // let treble_clef = CanvasSVG::new(
-            //     TREBLE_CLEF_PATH,
-            //     TREBLE_CLEF_ASPECT_RATIO,
-            //     TopLeft(Point::new(0., -1.65 * BARLINE_Y_SPACING)),
-            //     HeightOnly(7.5 * BARLINE_Y_SPACING),
+            frame.with_save(|f| {
+                f.scale(0.5);
+                for i in 1..12 {
+                    let t = canvas::Text {
+                        size: (100 + 10 * i).into(),
+                        position: Point::new(1. + 30. * i as f32, 1.),
+                        shaping: iced::widget::text::Shaping::Basic,
+                        font: self.font.font_iced,
+                        .."\u{E0A3}".into()
+                    };
+                    t.draw_with(|path, color| {
+                        f.fill(&path, Color::from_rgb(1., 0., 0.));
+                    });
+                }
+            });
+            // frame.fill(
+            //     &Path::circle(Point::new(50., 50.), 10.),
+            //     Color::from_rgb(1., 0., 0.),
             // );
-            // treble_clef.draw(frame);
 
-            for (i, bar) in self.bars.iter().enumerate() {
-                let bar_interaction = match &state.staff_interaction {
-                    StaffInteraction::None => BarInteraction::None,
-                    StaffInteraction::Hovering(staff_index) => {
-                        if staff_index.bar_index == i {
-                            BarInteraction::Hovering(staff_index.note_index)
-                        } else {
-                            BarInteraction::None
-                        }
-                    }
-                    StaffInteraction::Selected(staff_idx, selected_pitch) => {
-                        if staff_idx.bar_index == i {
-                            BarInteraction::Selected(staff_idx.note_index, *selected_pitch)
-                        } else {
-                            BarInteraction::None
-                        }
-                    }
+            frame.with_save(|f| {
+                f.scale(BARLINE_Y_SPACING * 4.);
+                f.translate(Vector::new(0., 2.));
+                // f.fill(&Path::circle(Point::ORIGIN, 1.), Color::BLACK);
+
+                let staff_bar_line_bounds = Rectangle {
+                    x: 0.,
+                    y: 0.,
+                    width: self.get_width(),
+                    height: 1.,
                 };
-                bar.draw(frame, &bar_interaction);
-            }
+                draw_bar_lines(
+                    f,
+                    staff_bar_line_bounds,
+                    self.font.engraving_defaults.staff_line_thickness / 4.,
+                    // Stroke::default().with_width(2.),
+                    // .with_width(self.font.engraving_defaults.staff_line_thickness / 4.),
+                );
 
-            let mut my_text: canvas::Text = "\u{E050}".into();
-            my_text.font = MUSIC_FONT;
-            my_text.size = (4. * BARLINE_Y_SPACING).into();
-            my_text.align_y = iced::alignment::Vertical::Center;
-            my_text.position = Point::new(0., 3. * BARLINE_Y_SPACING);
+                // new bar icon
+                // let new_bar_stroke = Stroke {
+                //     style: Gradient(
+                //         (Linear::new(
+                //             Point::new(state.new_bar_button_bounds.x, 0.),
+                //             Point::new(
+                //                 state.new_bar_button_bounds.x + state.new_bar_button_bounds.width,
+                //                 0.,
+                //             ),
+                //         )
+                //         .add_stop(0., Color::from_rgb(0.4, 0.4, 0.4))
+                //         .add_stop(1., Color::from_rgb(0.9, 0.9, 0.9)))
+                //         .into(),
+                //     ),
+                //     width: self.font.engraving_defaults.staff_line_thickness * BARLINE_Y_SPACING,
+                //     line_cap: LineCap::default(),
+                //     line_join: LineJoin::default(),
+                //     line_dash: LineDash::default(),
+                // };
+                // draw_bar_lines(f, state.new_bar_button_bounds, new_bar_stroke);
+                // f.fill(
+                //     &Path::circle(
+                //         state.new_bar_button_bounds.center(),
+                //         BARLINE_Y_SPACING * 0.8,
+                //     ),
+                //     Color::from_rgb(1., 1., 1.),
+                // );
+                // let plus_path = Path::new(|b| {
+                //     let r = BARLINE_Y_SPACING * 0.4;
+                //     b.move_to(state.new_bar_button_bounds.center() + Vector::new(-r, 0.));
+                //     b.line_to(state.new_bar_button_bounds.center() + Vector::new(r, 0.));
+                //
+                //     b.move_to(state.new_bar_button_bounds.center() + Vector::new(0., -r));
+                //     b.line_to(state.new_bar_button_bounds.center() + Vector::new(0., r));
+                // });
+                // f.stroke(
+                //     &plus_path,
+                //     Stroke::default()
+                //         .with_width(3.)
+                //         .with_color(if state.hovering_new_bar {
+                //             HIGHLIGHT_COLOR
+                //         } else {
+                //             Color::from_rgb(0.4, 0.4, 0.4)
+                //         })
+                //         .with_line_cap(LineCap::Round),
+                // );
 
-            my_text.draw_with(|path, color| {
-                frame.fill(&path, color);
+                for (i, bar) in self.bars.iter().enumerate() {
+                    let bar_interaction = match &state.staff_interaction {
+                        StaffInteraction::None => BarInteraction::None,
+                        StaffInteraction::Hovering(staff_index) => {
+                            if staff_index.bar_index == i {
+                                BarInteraction::Hovering(staff_index.note_index)
+                            } else {
+                                BarInteraction::None
+                            }
+                        }
+                        StaffInteraction::Selected(staff_idx, selected_pitch) => {
+                            if staff_idx.bar_index == i {
+                                BarInteraction::Selected(staff_idx.note_index, *selected_pitch)
+                            } else {
+                                BarInteraction::None
+                            }
+                        }
+                    };
+                    bar.draw(f, &bar_interaction, &self.font);
+                }
             });
-        });
 
+            // let mut my_text: canvas::Text = "\u{E050}".into();
+            // my_text.font = MUSIC_FONT;
+            // my_text.size = (4. * BARLINE_Y_SPACING).into();
+            // my_text.align_y = iced::alignment::Vertical::Center;
+            // my_text.position = Point::new(0., 3. * BARLINE_Y_SPACING);
+            //
+            // my_text.draw_with(|path, color| {
+            //     frame.fill(&path, color);
+            // });
+        });
         vec![geom]
     }
 }

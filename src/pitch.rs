@@ -25,6 +25,20 @@ impl Pitch {
             octave,
         }
     }
+
+    // Y offset is in staff coordinates/units
+    pub fn to_y_offset(&self) -> f32 {
+        let p: u8 = (*self).into();
+        let b: u8 = Pitch::new(PitchClass::E, 4).into();
+        0.125 * (p - b) as f32
+    }
+}
+
+impl From<Pitch> for u8 {
+    /// C0 maps to 0 and each pitch higher increases
+    fn from(value: Pitch) -> Self {
+        value.octave * 7 + value.pitch_class as u8
+    }
 }
 
 impl Ord for Pitch {
