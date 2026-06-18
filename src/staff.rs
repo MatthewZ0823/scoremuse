@@ -3,23 +3,18 @@ use std::cmp::min;
 
 use crate::FontMeta;
 use crate::bar::{Bar, BarEl, BarInteraction};
-use crate::colors::HIGHLIGHT_COLOR;
-use crate::constants::{BARLINE_Y_SPACING, MUSIC_FONT};
+use crate::constants::STANDARD_STAFF_SPACING;
 use crate::note_or_rest::NoteOrRest;
-use crate::pitch::{Pitch, PitchClass};
+use crate::pitch::Pitch;
 use iced::widget::Action;
-use iced::widget::canvas::Style::Gradient;
-use iced::widget::canvas::gradient::Linear;
-use iced::widget::canvas::{self, Frame, LineCap, LineDash, LineJoin, Path, Stroke};
+use iced::widget::canvas::{self, Frame};
 use iced::{Color, Point, Rectangle, Renderer, Theme, Vector, mouse};
 
 use crate::Message;
 
-const TOP_PADDIING: f32 = 30.;
-// Padding in front of every bar before the first note
-const PREAMBLE_WIDTH: f32 = 1.;
+// Padding in front first bar
+const PREAMBLE_WIDTH: f32 = 100.;
 // const PREAMBLE_WIDTH: f32 = 6. * BARLINE_Y_SPACING;
-const NOTE_Y_SPACING: f32 = BARLINE_Y_SPACING / 2.;
 
 #[derive(Debug, Default)]
 pub struct Staff {
@@ -29,6 +24,7 @@ pub struct Staff {
 
 pub struct StaffEl {
     // The BarEls should be sorted by the order they come in the music and are drawn
+    // Each BarEl should not be empty, ie. they should have some notes/rests
     bars: Vec<BarEl>,
     cache: canvas::Cache,
     font: FontMeta,
@@ -90,6 +86,24 @@ pub struct State {
     staff_interaction: StaffInteraction,
     hovering_new_bar: bool,
     new_bar_button_bounds: Rectangle,
+    staff_transformation: StaffTransformation,
+}
+
+/// The transformation applied to the staff, ie. transformation from widget to staff space
+///
+/// To transform the staff, scale is applied first, and then translation
+struct StaffTransformation {
+    scale: f32,
+    translation: Vector,
+}
+
+impl Default for StaffTransformation {
+    fn default() -> Self {
+        Self {
+            scale: 0.1,
+            translation: Vector::new(0., 2. * STANDARD_STAFF_SPACING),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -152,27 +166,6 @@ fn get_hovering(cursor_pos: &Point, staff: &StaffEl) -> Option<StaffIndex> {
     return None;
 }
 
-fn y_offset_to_pitch(y: f32) -> Pitch {
-    let note_space: f32 = 3. - y / NOTE_Y_SPACING;
-    let mut pitch_class_num = (note_space % 7.).round() as i32;
-    if pitch_class_num < 0 {
-        pitch_class_num += 7;
-    }
-    let pitch_class = match pitch_class_num {
-        0 => PitchClass::C,
-        1 => PitchClass::D,
-        2 => PitchClass::E,
-        3 => PitchClass::F,
-        4 => PitchClass::G,
-        5 => PitchClass::A,
-        6 => PitchClass::B,
-        _ => panic!("Modular Arithmetic Error"),
-    };
-    let octave = ((note_space.round() / 7.).floor() + 5.) as u8;
-
-    Pitch::new(pitch_class, octave)
-}
-
 fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, thickness: f32) {
     let spacing = bounds.height / 4.;
     for i in 0..5 {
@@ -195,23 +188,25 @@ impl canvas::Program<Message> for StaffEl {
         cursor: mouse::Cursor,
     ) -> Option<canvas::Action<Message>> {
         // TODO: Clean up update logic
-        let new_bar_width = 4. * BARLINE_Y_SPACING;
+        let new_bar_width = 4. * STANDARD_STAFF_SPACING;
         let new_bar_button_bounds = Rectangle {
             x: self.get_width(),
             y: 0.,
             width: new_bar_width,
-            height: 4. * BARLINE_Y_SPACING,
+            height: 4. * STANDARD_STAFF_SPACING,
         };
         state.new_bar_button_bounds = new_bar_button_bounds;
+        let cursor_position = cursor
+            .position()
+            .map(|p| absolute_to_widget_space(p, &bounds))
+            .map(|p| widget_to_staff_space(p, &state.staff_transformation));
 
         match event {
             iced::Event::Mouse(event) => match event {
                 mouse::Event::ButtonPressed(button) => {
                     match button {
                         mouse::Button::Left => {
-                            if let Some(position) =
-                                cursor.position_in(bounds + Vector::new(0., TOP_PADDIING))
-                            {
+                            if let Some(position) = cursor_position {
                                 if state.new_bar_button_bounds.contains(position) {
                                     return Some(canvas::Action::publish(Message::AddBar));
                                 }
@@ -220,10 +215,14 @@ impl canvas::Program<Message> for StaffEl {
                                     StaffInteraction::None => (),
                                     StaffInteraction::Hovering(staff_index) => {
                                         // TODO: Rerender
-                                        state.staff_interaction = StaffInteraction::Selected(
-                                            staff_index,
-                                            y_offset_to_pitch(position.y),
-                                        );
+                                        if let Some(hovered_pitch) =
+                                            Pitch::from_y_offset(position.y)
+                                        {
+                                            state.staff_interaction = StaffInteraction::Selected(
+                                                staff_index,
+                                                hovered_pitch,
+                                            );
+                                        }
                                     }
                                     StaffInteraction::Selected(staff_index, pitch) => {
                                         state.staff_interaction = StaffInteraction::None;
@@ -239,69 +238,69 @@ impl canvas::Program<Message> for StaffEl {
                     }
                     return None;
                 }
-                mouse::Event::CursorMoved { .. } => {
-                    match cursor.position_in(bounds + Vector::new(0., TOP_PADDIING)) {
-                        Some(position) => {
-                            let mut should_rerender;
+                mouse::Event::CursorMoved { .. } => match cursor_position {
+                    Some(position) => {
+                        let mut should_rerender;
 
-                            if state.new_bar_button_bounds.contains(position) {
-                                should_rerender = !state.hovering_new_bar;
-                                state.hovering_new_bar = true;
-                            } else {
-                                should_rerender = state.hovering_new_bar;
-                                state.hovering_new_bar = false;
-                            }
+                        if state.new_bar_button_bounds.contains(position) {
+                            should_rerender = !state.hovering_new_bar;
+                            state.hovering_new_bar = true;
+                        } else {
+                            should_rerender = state.hovering_new_bar;
+                            state.hovering_new_bar = false;
+                        }
 
-                            let hovering = get_hovering(&position, self);
-                            match &state.staff_interaction {
-                                StaffInteraction::None => {
-                                    if let Some(staff_index) = hovering {
-                                        should_rerender = true;
-                                        state.staff_interaction =
-                                            StaffInteraction::Hovering(staff_index);
-                                    }
-                                }
-                                StaffInteraction::Hovering(staff_index) => match hovering {
-                                    Some(hovering_index) => {
-                                        if hovering_index != *staff_index {
-                                            should_rerender = true;
-                                            state.staff_interaction =
-                                                StaffInteraction::Hovering(hovering_index);
-                                        }
-                                    }
-                                    None => {
-                                        should_rerender = true;
-                                        state.staff_interaction = StaffInteraction::None;
-                                    }
-                                },
-                                StaffInteraction::Selected(staff_index, pitch) => {
-                                    let p = y_offset_to_pitch(position.y);
-                                    if p != *pitch {
-                                        state.staff_interaction =
-                                            StaffInteraction::Selected(*staff_index, p);
-                                        should_rerender = true;
-                                    }
+                        let hovering = get_hovering(&position, self);
+                        match &state.staff_interaction {
+                            StaffInteraction::None => {
+                                if let Some(staff_index) = hovering {
+                                    should_rerender = true;
+                                    state.staff_interaction =
+                                        StaffInteraction::Hovering(staff_index);
                                 }
                             }
-
-                            if should_rerender {
-                                self.cache.clear();
-                                Some(Action::request_redraw())
-                            } else {
-                                None
+                            StaffInteraction::Hovering(staff_index) => match hovering {
+                                Some(hovering_index) => {
+                                    if hovering_index != *staff_index {
+                                        should_rerender = true;
+                                        state.staff_interaction =
+                                            StaffInteraction::Hovering(hovering_index);
+                                    }
+                                }
+                                None => {
+                                    should_rerender = true;
+                                    state.staff_interaction = StaffInteraction::None;
+                                }
+                            },
+                            StaffInteraction::Selected(staff_index, pitch) => {
+                                let hovered_pitch = Pitch::from_y_offset(position.y);
+                                if let Some(p) = hovered_pitch
+                                    && p != *pitch
+                                {
+                                    state.staff_interaction =
+                                        StaffInteraction::Selected(*staff_index, p);
+                                    should_rerender = true;
+                                }
                             }
                         }
-                        None => {
-                            if state.hovering_new_bar {
-                                state.hovering_new_bar = false;
-                                self.cache.clear();
-                                Some(Action::request_redraw())
-                            } else {
-                                None
-                            }
+
+                        if should_rerender {
+                            self.cache.clear();
+                            Some(Action::request_redraw())
+                        } else {
+                            None
                         }
                     }
-                }
+                    None => {
+                        if state.hovering_new_bar {
+                            state.hovering_new_bar = false;
+                            self.cache.clear();
+                            Some(Action::request_redraw())
+                        } else {
+                            None
+                        }
+                    }
+                },
                 _ => None,
             },
             iced::Event::Keyboard(_event) => None,
@@ -323,58 +322,19 @@ impl canvas::Program<Message> for StaffEl {
         let _cursor = cursor;
         let geom = self.cache.draw(renderer, bounds.size(), |frame| {
             frame.with_save(|f| {
-                f.scale(1.);
-                for i in 1..12 {
-                    let t = canvas::Text {
-                        size: (50 + 10 * i).into(),
-                        position: Point::new(500. + 30. * i as f32, 1.),
-                        shaping: iced::widget::text::Shaping::Basic,
-                        font: self.font.font_iced,
-                        .."\u{E0A3}".into()
-                    };
-                    t.draw_with(|path, color| {
-                        f.fill(&path, Color::from_rgb(1., 0., 0.));
-                    });
-                }
-            });
-
-            frame.with_save(|f| {
-                f.scale(0.5);
-                for i in 1..12 {
-                    let t = canvas::Text {
-                        size: (100 + 10 * i).into(),
-                        position: Point::new(1. + 30. * i as f32, 1.),
-                        shaping: iced::widget::text::Shaping::Basic,
-                        font: self.font.font_iced,
-                        .."\u{E0A3}".into()
-                    };
-                    t.draw_with(|path, color| {
-                        f.fill(&path, Color::from_rgb(1., 0., 0.));
-                    });
-                }
-            });
-            // frame.fill(
-            //     &Path::circle(Point::new(50., 50.), 10.),
-            //     Color::from_rgb(1., 0., 0.),
-            // );
-
-            frame.with_save(|f| {
-                f.scale(BARLINE_Y_SPACING * 4.);
-                f.translate(Vector::new(0., 2.));
-                // f.fill(&Path::circle(Point::ORIGIN, 1.), Color::BLACK);
+                f.scale(state.staff_transformation.scale);
+                f.translate(state.staff_transformation.translation);
 
                 let staff_bar_line_bounds = Rectangle {
                     x: 0.,
                     y: 0.,
                     width: self.get_width(),
-                    height: 1.,
+                    height: 400.,
                 };
                 draw_bar_lines(
                     f,
                     staff_bar_line_bounds,
-                    self.font.engraving_defaults.staff_line_thickness / 4.,
-                    // Stroke::default().with_width(2.),
-                    // .with_width(self.font.engraving_defaults.staff_line_thickness / 4.),
+                    self.font.engraving_defaults.staff_line_thickness,
                 );
 
                 // new bar icon
@@ -445,17 +405,21 @@ impl canvas::Program<Message> for StaffEl {
                     bar.draw(f, &bar_interaction, &self.font);
                 }
             });
-
-            // let mut my_text: canvas::Text = "\u{E050}".into();
-            // my_text.font = MUSIC_FONT;
-            // my_text.size = (4. * BARLINE_Y_SPACING).into();
-            // my_text.align_y = iced::alignment::Vertical::Center;
-            // my_text.position = Point::new(0., 3. * BARLINE_Y_SPACING);
-            //
-            // my_text.draw_with(|path, color| {
-            //     frame.fill(&path, color);
-            // });
         });
         vec![geom]
     }
+}
+
+/// Absolute space is the absolute position, and widget space is the space within the given bounds,
+/// with the bounds' origin as the origin of the space
+fn absolute_to_widget_space(point: Point, bounds: &Rectangle) -> Point {
+    point - Vector::new(bounds.x, bounds.y)
+}
+
+/// Widget space is the space within the bounds of the canvas widget, with no scale applied
+fn widget_to_staff_space(point: Point, staff_transformation: &StaffTransformation) -> Point {
+    Point::new(
+        point.x / staff_transformation.scale,
+        point.y / staff_transformation.scale,
+    ) - staff_transformation.translation
 }

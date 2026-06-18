@@ -1,8 +1,8 @@
-use crate::constants::BARLINE_Y_SPACING;
+use crate::constants::{BARLINE_LEFT_PADDING, STANDARD_STAFF_SPACING};
 use crate::font;
 use crate::note_or_rest::{NoteInteraction, NoteOrRest, NoteOrRestEl};
 use crate::pitch::Pitch;
-use iced::widget::canvas;
+use iced::{Color, Size};
 use iced::{
     Point,
     widget::canvas::{Frame, Path},
@@ -25,6 +25,7 @@ pub struct BarEl {
     notes: Vec<NoteOrRestEl>,
     // `x` is the left bound of the bar
     x: f32,
+    // Total width, including padding
     width: f32,
 }
 
@@ -40,7 +41,7 @@ impl BarEl {
     // `x` is the left bound of the bar
     pub fn new(bar: Bar, x: f32, font: &font::FontMeta) -> Self {
         let mut note_els: Vec<NoteOrRestEl> = vec![];
-        let mut x_ = x;
+        let mut x_ = x + BARLINE_LEFT_PADDING;
         for note in bar.notes.into_iter() {
             let n = NoteOrRestEl::new(note, x_, font);
             x_ += n.get_width();
@@ -49,7 +50,7 @@ impl BarEl {
 
         BarEl {
             notes: note_els,
-            width: x_ - x,
+            width: x_ - x + font.barlines_meta.single_advance_width,
             x,
         }
     }
@@ -85,12 +86,16 @@ impl BarEl {
             note.draw(frame, &note_interaction, font);
         }
 
-        let barline_x = self.x + self.width;
-        let barline_path = Path::line(
+        let last_note = self.notes.last().expect("Bar should not be empty");
+        let barline_x = last_note.get_right_bound();
+        let barline_path = Path::rectangle(
             Point::new(barline_x, 0.),
-            Point::new(barline_x, 4. * BARLINE_Y_SPACING),
+            Size::new(
+                font.barlines_meta.thin_thickness,
+                4. * STANDARD_STAFF_SPACING,
+            ),
         );
-        frame.stroke(&barline_path, canvas::Stroke::default());
+        frame.fill(&barline_path, Color::BLACK);
     }
 
     pub fn get_notes(&self) -> &Vec<NoteOrRestEl> {

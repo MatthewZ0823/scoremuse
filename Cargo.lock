@@ -3260,6 +3260,8 @@ name = "scoremuse"
 version = "0.1.0"
 dependencies = [
  "iced",
+ "num-derive",
+ "num-traits",
  "serde",
  "serde_json",
 ]

@@ -7,6 +7,8 @@ edition = "2024"
 iced = { version = "0.14.0", features = ["debug", "canvas", "svg", "image"] }
 serde = "1.0.228"
 serde_json = "1.0.150"
+num-traits = "0.2"
+num-derive = "0.4"
 
 [features]
 debug = ["iced/hot"]

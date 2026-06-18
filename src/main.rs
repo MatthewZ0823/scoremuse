@@ -1,5 +1,7 @@
+#[macro_use]
+extern crate num_derive;
+
 use crate::bar::Bar;
-use crate::constants::MUSIC_FONT;
 use crate::font::{FontMeta, load_font};
 use crate::note_or_rest::NoteOrRest;
 use crate::pitch::{Pitch, PitchClass};
@@ -51,6 +53,11 @@ impl App {
                             //     NoteOrRest::new(None, 3),
                             // ]),
                             Bar::new(vec![NoteOrRest::new(None, 1)]),
+                            Bar::new(vec![
+                                NoteOrRest::new(None, 2),
+                                NoteOrRest::new(None, 3),
+                                NoteOrRest::new(None, 3),
+                            ]),
                         ],
                     };
                     self.staff = Some(StaffEl::new(staff, font_meta));
@@ -75,11 +82,12 @@ impl App {
         match &self.staff {
             Some(staff) => {
                 let staff_canvas = canvas(staff).width(Fill).height(Fill);
-                let test = text("\u{E0A2}\u{E0A3}\u{E0A4}").font(MUSIC_FONT);
 
                 // The layout
-                let interface: Element<_> =
-                    column![test, staff_canvas].height(Fill).width(Fill).into();
+                let interface: Element<_> = column![text("hello world").height(100), staff_canvas]
+                    .height(Fill)
+                    .width(Fill)
+                    .into();
 
                 let explained = if DEBUG {
                     interface.explain(Color::BLACK)

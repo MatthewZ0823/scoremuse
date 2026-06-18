@@ -1,11 +1,13 @@
+use iced::Size;
 use iced::widget::canvas::{self};
 use iced::{
-    Color, Point, Vector,
+    Color, Point,
     widget::canvas::{Frame, Path},
 };
 
 use crate::colors::HIGHLIGHT_COLOR;
-use crate::font::{self, FontMeta};
+use crate::constants::STANDARD_STAFF_SPACING;
+use crate::font::{self, FontMeta, StemNoteMeta};
 use crate::pitch::{Pitch, PitchClass};
 
 #[derive(Debug)]
@@ -29,8 +31,9 @@ pub struct NoteOrRestEl {
     note_or_rest: NoteOrRest,
     // X-Coordinate of the glyph's X=0, in staff space
     x: f32,
-    // The width of the glyph in staff space
-    width: f32,
+    // The advance width of the glyph in staff units
+    advance_width: f32,
+    right_margin: f32,
 }
 
 pub enum NoteInteraction {
@@ -43,16 +46,28 @@ pub enum NoteInteraction {
 
 impl NoteOrRestEl {
     pub fn new(note_or_rest: NoteOrRest, x: f32, font: &font::FontMeta) -> Self {
-        let width = Self::compute_width(&note_or_rest, font);
+        let advance_width = Self::compute_advance_width(&note_or_rest, font);
+        let right_margin = Self::compute_right_margin(note_or_rest.duration);
 
         Self {
             note_or_rest,
-            width,
+            advance_width,
+            right_margin,
             x,
         }
     }
 
-    fn compute_width(note_or_rest: &NoteOrRest, font: &font::FontMeta) -> f32 {
+    fn compute_right_margin(duration: u8) -> f32 {
+        (match duration {
+            0 => panic!("Cannot have duration 0"),
+            1 => 3.,
+            2 => 2.,
+            3 => 1.,
+            _ => todo!(),
+        }) * STANDARD_STAFF_SPACING
+    }
+
+    fn compute_advance_width(note_or_rest: &NoteOrRest, font: &font::FontMeta) -> f32 {
         match note_or_rest.pitch {
             None => {
                 // Rest
@@ -92,19 +107,27 @@ impl NoteOrRestEl {
         *pitch > Pitch::new(PitchClass::B, 4)
     }
 
+    fn stem_direction(pitch: &Pitch) -> StemDirection {
+        if Self::stem_down(pitch) {
+            StemDirection::DOWN
+        } else {
+            StemDirection::UP
+        }
+    }
+
+    /// Gets the total width of the glyph, including margins
+    pub fn get_width(self: &Self) -> f32 {
+        self.advance_width + self.right_margin
+    }
+
     /// Gets the x-coordinate of the right bound
     pub fn get_right_bound(self: &Self) -> f32 {
-        self.x + self.width
+        self.x + self.get_width()
     }
 
     /// Gets the x-coordinate of the left bound
     pub fn get_left_bound(self: &Self) -> f32 {
         self.x
-    }
-
-    // Get the total width of the note
-    pub fn get_width(self: &Self) -> f32 {
-        self.width
     }
 
     pub fn translate_x(self: &mut Self, dx: f32) {
@@ -115,7 +138,7 @@ impl NoteOrRestEl {
     // Assuming only the right width might change on pitch change
     pub fn set_pitch(self: &mut Self, pitch: Pitch, font: &font::FontMeta) {
         self.note_or_rest.pitch = Some(pitch);
-        self.width = Self::compute_width(&self.note_or_rest, font);
+        self.advance_width = Self::compute_advance_width(&self.note_or_rest, font);
     }
 
     // Frame coordinates should be same as staff coordinates
@@ -127,17 +150,11 @@ impl NoteOrRestEl {
     ) {
         // Draw the "selected/hover" note
         if let NoteInteraction::Selected(hovering_pitch) = note_interaction {
-            let stem_direction = if Self::stem_down(hovering_pitch) {
-                StemDirection::DOWN
-            } else {
-                StemDirection::UP
-            };
-
             draw_note(
                 frame,
                 self.note_or_rest.duration,
                 Point::new(self.x, hovering_pitch.to_y_offset()),
-                stem_direction,
+                Self::stem_direction(hovering_pitch),
                 Some(Color::from_rgb(0.6, 0.6, 0.6)),
                 &font,
             );
@@ -149,47 +166,28 @@ impl NoteOrRestEl {
         };
 
         match &self.note_or_rest.pitch {
-            None => match self.note_or_rest.duration {
-                1 => {
-                    draw_glyph(
-                        frame,
-                        "\u{E4E3}",
-                        Point::new(self.x, 0.),
-                        color,
-                        &font.font_iced,
-                    );
-                }
-                2 => {
-                    draw_glyph(
-                        frame,
-                        "\u{E4E4}",
-                        Point::new(self.x, 0.),
-                        color,
-                        &font.font_iced,
-                    );
-                }
-                3 => {
-                    draw_glyph(
-                        frame,
-                        "\u{E4E5}",
-                        Point::new(self.x, 0.),
-                        color,
-                        &font.font_iced,
-                    );
-                }
-                _ => todo!(),
-            },
-            Some(pitch) => {
-                let stem_direction = if Self::stem_down(pitch) {
-                    StemDirection::DOWN
-                } else {
-                    StemDirection::UP
+            None => {
+                let glyph_str = match self.note_or_rest.duration {
+                    1 => "\u{E4E3}",
+                    2 => "\u{E4E4}",
+                    3 => "\u{E4E5}",
+                    _ => todo!(),
                 };
+
+                draw_glyph(
+                    frame,
+                    glyph_str,
+                    Point::new(self.x, 2. * STANDARD_STAFF_SPACING),
+                    color,
+                    &font.font_iced,
+                );
+            }
+            Some(pitch) => {
                 draw_note(
                     frame,
                     self.note_or_rest.duration,
                     Point::new(self.x, (&pitch).to_y_offset()),
-                    stem_direction,
+                    Self::stem_direction(pitch),
                     color,
                     &font,
                 );
@@ -198,7 +196,7 @@ impl NoteOrRestEl {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum StemDirection {
     UP,
     DOWN,
@@ -221,13 +219,25 @@ fn draw_note(
         }
         2 => {
             let color = draw_glyph(frame, "\u{E0A3}", position, color, &font_meta.font_iced);
-            let anchor = notes_meta.half_note.stem.get_anchor(stem_direction);
-            draw_stem(frame, anchor, stem_direction, thickness, color);
+            draw_stem(
+                frame,
+                &position,
+                &notes_meta.half_note.stem,
+                &stem_direction,
+                thickness,
+                &color,
+            );
         }
         _ => {
             let color = draw_glyph(frame, "\u{E0A4}", position, color, &font_meta.font_iced);
-            let anchor = notes_meta.quarter_note.stem.get_anchor(stem_direction);
-            draw_stem(frame, anchor, stem_direction, thickness, color);
+            draw_stem(
+                frame,
+                &position,
+                &notes_meta.quarter_note.stem,
+                &stem_direction,
+                thickness,
+                &color,
+            );
         }
     }
 }
@@ -244,7 +254,7 @@ fn draw_glyph(
         font: *font,
         align_y: iced::alignment::Vertical::Center,
         position: position,
-        size: 1.into(),
+        size: (4. * STANDARD_STAFF_SPACING).into(),
         ..glyph.into()
     };
 
@@ -258,23 +268,20 @@ fn draw_glyph(
 
 fn draw_stem(
     frame: &mut Frame,
-    anchor: Point,
-    stem_direction: StemDirection,
+    note_position: &Point,
+    stem_meta: &StemNoteMeta,
+    stem_direction: &StemDirection,
     thickness: f32,
-    color: Color,
+    color: &Color,
 ) {
-    let length = match stem_direction {
-        StemDirection::UP => 1.,
-        StemDirection::DOWN => -1.,
+    let anchor = *note_position + stem_meta.get_anchor(stem_direction);
+    let sign = match stem_direction {
+        StemDirection::UP => -1.,
+        StemDirection::DOWN => 1.,
     };
-    let stem_start = anchor;
-    let stem_end = anchor + Vector::new(0., length);
-    let stem_path = Path::line(stem_start, stem_end);
+    let length = stem_meta.get_length(stem_direction) * sign;
+    let width = thickness * sign;
 
-    let stem_stroke = canvas::Stroke {
-        width: thickness,
-        style: color.into(),
-        ..canvas::Stroke::default()
-    };
-    frame.stroke(&stem_path, stem_stroke);
+    let stem = Path::rectangle(anchor, Size::new(width, length));
+    frame.fill(&stem, *color);
 }
