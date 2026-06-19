@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 use serde_json;
-use std::{fmt, fs, io, path::PathBuf};
+use std::{array::from_fn, fmt, fs, io, path::PathBuf};
 
 use iced::{Font, Task, Vector, font};
 
@@ -78,16 +78,20 @@ pub struct BarlinesMeta {
 
 #[derive(Clone, Debug)]
 pub struct NotesMeta {
-    pub quarter_note: QuarterNoteMeta,
-    pub half_note: HalfNoteMeta,
     pub whole_note: WholeNoteMeta,
+    pub half_note: StemNoteMeta,
+    pub quarter_note: StemNoteMeta,
+    pub note_8th: StemNoteMeta,
+    pub note_16th: StemNoteMeta,
+    pub note_32nd: StemNoteMeta,
+    pub note_64th: StemNoteMeta,
+    pub note_128th: StemNoteMeta,
 }
 
 #[derive(Clone, Debug)]
 pub struct RestsMeta {
-    pub quarter_rest: RestMeta,
-    pub half_rest: RestMeta,
-    pub whole_rest: RestMeta,
+    /// `rests[duration]` is the metadata for the rest with `duration`
+    pub rests: [RestMeta; 8],
 }
 
 #[derive(Clone, Debug)]
@@ -104,17 +108,34 @@ pub struct EngravingDefaults {
 }
 
 #[derive(Clone, Debug)]
-pub struct QuarterNoteMeta {
+/// Metadata for notes with stems
+pub struct StemNoteMeta {
     pub stem_up_advance_width: f32,
     pub stem_down_advance_width: f32,
-    pub stem: StemNoteMeta,
+    pub stem_anchors: StemAnchors,
+}
+
+impl StemNoteMeta {
+    /// converts `stem_up_advance_width_smufl` and `stem_down_advance_width_smufl` into staff units
+    /// leaves `stem_anchors` untouched
+    fn from_smufl_units(
+        stem_up_advance_width_smufl: f32,
+        stem_down_advance_width_smufl: f32,
+        stem_anchors: StemAnchors,
+    ) -> Self {
+        Self {
+            stem_up_advance_width: stem_up_advance_width_smufl * STANDARD_STAFF_SPACING,
+            stem_down_advance_width: stem_down_advance_width_smufl * STANDARD_STAFF_SPACING,
+            stem_anchors,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct HalfNoteMeta {
-    pub stem_up_advance_width: f32,
-    pub stem_down_advance_width: f32,
-    pub stem: StemNoteMeta,
+/// Position of the stem anchors relative to the origin of the note
+pub struct StemAnchors {
+    pub stem_up_se: Vector,
+    pub stem_down_nw: Vector,
 }
 
 #[derive(Clone, Debug)]
@@ -122,29 +143,46 @@ pub struct WholeNoteMeta {
     pub advance_width: f32,
 }
 
-#[derive(Clone, Debug)]
-// Metadata for notes with stems
-pub struct StemNoteMeta {
-    pub stem_up_se: Vector,
-    pub stem_down_nw: Vector,
+pub trait HasStem {
+    /// Position of the stem anchor on the notehead relative to the origin of the note
+    fn get_stem_anchor(&self, stem_direction: &StemDirection) -> Vector;
+
+    /// Get the length of the stem if there are no modifications to the length
+    ///
+    /// Positive is down (+y), negative is up (-y)
+    fn get_signed_length(&self, stem_direction: &StemDirection) -> f32;
+
+    /// Get the (unsigned) length of the stem if there are no modifications to the length
+    fn get_length(&self, stem_direction: &StemDirection) -> f32 {
+        self.get_signed_length(stem_direction).abs()
+    }
 }
 
-impl StemNoteMeta {
-    pub fn get_anchor(&self, stem_direction: &StemDirection) -> Vector {
+impl HasStem for StemAnchors {
+    fn get_stem_anchor(&self, stem_direction: &StemDirection) -> Vector {
         match stem_direction {
             StemDirection::UP => self.stem_up_se,
             StemDirection::DOWN => self.stem_down_nw,
         }
     }
 
-    /// Get the (unsigned) length of the stem if there are no modifications to the length
-    pub fn get_length(&self, stem_direction: &StemDirection) -> f32 {
-        let anchor = self.get_anchor(stem_direction);
+    fn get_signed_length(&self, stem_direction: &StemDirection) -> f32 {
+        let anchor = self.get_stem_anchor(stem_direction);
         let sign = match stem_direction {
-            StemDirection::UP => 1.,
-            StemDirection::DOWN => -1.,
+            StemDirection::UP => -1.,
+            StemDirection::DOWN => 1.,
         };
-        3.5 * STANDARD_STAFF_SPACING + sign * anchor.y
+        sign * 3.5 * STANDARD_STAFF_SPACING + anchor.y
+    }
+}
+
+impl HasStem for StemNoteMeta {
+    fn get_stem_anchor(&self, stem_direction: &StemDirection) -> Vector {
+        self.stem_anchors.get_stem_anchor(stem_direction)
+    }
+
+    fn get_signed_length(&self, stem_direction: &StemDirection) -> f32 {
+        self.stem_anchors.get_signed_length(stem_direction)
     }
 }
 
@@ -164,6 +202,9 @@ impl TryFrom<RawFontMeta> for FontMeta {
         let font_name: &'static str = value.font_name.clone().leak();
         let font_iced = Font::with_name(font_name);
 
+        let notehead_black_stem_anchors =
+            StemAnchors::try_from(&value.glyphs_with_anchors.notehead_black)?;
+
         Ok(FontMeta {
             font_iced,
             font_name: value.font_name,
@@ -179,34 +220,62 @@ impl TryFrom<RawFontMeta> for FontMeta {
                 stem_thickness: value.engraving_defaults.stem_thickness * STANDARD_STAFF_SPACING,
             },
             notes_meta: NotesMeta {
-                quarter_note: QuarterNoteMeta {
-                    stem: StemNoteMeta::try_from(value.glyphs_with_anchors.notehead_black)?,
-                    stem_up_advance_width: value.glyph_advance_widths.note_quarter_up
-                        * STANDARD_STAFF_SPACING,
-                    stem_down_advance_width: value.glyph_advance_widths.note_quarter_down
-                        * STANDARD_STAFF_SPACING,
-                },
-                half_note: HalfNoteMeta {
-                    stem: StemNoteMeta::try_from(value.glyphs_with_anchors.notehead_half)?,
-                    stem_up_advance_width: value.glyph_advance_widths.note_half_up
-                        * STANDARD_STAFF_SPACING,
-                    stem_down_advance_width: value.glyph_advance_widths.note_half_down
-                        * STANDARD_STAFF_SPACING,
-                },
                 whole_note: WholeNoteMeta {
                     advance_width: value.glyph_advance_widths.note_whole * STANDARD_STAFF_SPACING,
                 },
+                half_note: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_half_up,
+                    value.glyph_advance_widths.note_half_down,
+                    StemAnchors::try_from(&value.glyphs_with_anchors.notehead_half)?,
+                ),
+                quarter_note: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_half_up,
+                    value.glyph_advance_widths.note_half_down,
+                    notehead_black_stem_anchors.clone(),
+                ),
+                note_8th: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_8th_up,
+                    value.glyph_advance_widths.note_8th_down,
+                    notehead_black_stem_anchors.clone(),
+                ),
+                note_16th: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_16th_up,
+                    value.glyph_advance_widths.note_16th_down,
+                    notehead_black_stem_anchors.clone(),
+                ),
+                note_32nd: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_32nd_up,
+                    value.glyph_advance_widths.note_32nd_down,
+                    notehead_black_stem_anchors.clone(),
+                ),
+                note_64th: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_64th_up,
+                    value.glyph_advance_widths.note_64th_down,
+                    notehead_black_stem_anchors.clone(),
+                ),
+                note_128th: StemNoteMeta::from_smufl_units(
+                    value.glyph_advance_widths.note_128th_up,
+                    value.glyph_advance_widths.note_128th_down,
+                    notehead_black_stem_anchors.clone(),
+                ),
             },
             rests_meta: RestsMeta {
-                quarter_rest: RestMeta {
-                    advance_width: value.glyph_advance_widths.rest_quarter * STANDARD_STAFF_SPACING,
-                },
-                half_rest: RestMeta {
-                    advance_width: value.glyph_advance_widths.rest_half * STANDARD_STAFF_SPACING,
-                },
-                whole_rest: RestMeta {
-                    advance_width: value.glyph_advance_widths.rest_whole * STANDARD_STAFF_SPACING,
-                },
+                rests: from_fn(|i| {
+                    let g = &value.glyph_advance_widths;
+                    let advance_width = match i {
+                        0 => g.rest_whole,
+                        1 => g.rest_half,
+                        2 => g.rest_quarter,
+                        3 => g.rest_8th,
+                        4 => g.rest_16th,
+                        5 => g.rest_32nd,
+                        6 => g.rest_64th,
+                        7 => g.rest_128th,
+                        _ => panic!("Rests shorter than 128th have not been implemented"),
+                    } * STANDARD_STAFF_SPACING;
+
+                    RestMeta { advance_width }
+                }),
             },
         })
     }
@@ -234,9 +303,18 @@ struct RawGlyphAdvanceWidths {
     note_16th_down: f32,
     note_32nd_up: f32,
     note_32nd_down: f32,
+    note_64th_up: f32,
+    note_64th_down: f32,
+    note_128th_up: f32,
+    note_128th_down: f32,
     rest_whole: f32,
     rest_half: f32,
     rest_quarter: f32,
+    rest_8th: f32,
+    rest_16th: f32,
+    rest_32nd: f32,
+    rest_64th: f32,
+    rest_128th: f32,
     barline_single: f32,
 }
 
@@ -246,6 +324,16 @@ struct RawGlyphsWithAnchors {
     notehead_whole: RawAnchors,
     notehead_half: RawAnchors,
     notehead_black: RawAnchors,
+    flag_8th_up: RawAnchors,
+    flag_8th_down: RawAnchors,
+    flag_16th_up: RawAnchors,
+    flag_16th_down: RawAnchors,
+    flag_32nd_up: RawAnchors,
+    flag_32nd_down: RawAnchors,
+    flag_64th_up: RawAnchors,
+    flag_64th_down: RawAnchors,
+    flag_128th_up: RawAnchors,
+    flag_128th_down: RawAnchors,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -260,17 +348,17 @@ struct RawAnchors {
     stem_down_sw: Option<(f32, f32)>,
 }
 
-impl TryFrom<RawAnchors> for StemNoteMeta {
+impl TryFrom<&RawAnchors> for StemAnchors {
     type Error = DeserializeError;
 
-    fn try_from(value: RawAnchors) -> Result<Self, Self::Error> {
+    fn try_from(value: &RawAnchors) -> Result<Self, Self::Error> {
         let stem_up_se = value
             .stem_up_se
-            .map(|v| Vector::new(v.0 * STANDARD_STAFF_SPACING, v.1 * -STANDARD_STAFF_SPACING))
+            .map(parse_raw_vector)
             .ok_or(DeserializeError)?;
         let stem_down_nw = value
             .stem_down_nw
-            .map(|v| Vector::new(v.0 * STANDARD_STAFF_SPACING, v.1 * -STANDARD_STAFF_SPACING))
+            .map(parse_raw_vector)
             .ok_or(DeserializeError)?;
 
         Ok(Self {
@@ -278,6 +366,33 @@ impl TryFrom<RawAnchors> for StemNoteMeta {
             stem_down_nw,
         })
     }
+}
+
+pub trait GetAdvanceWidth {
+    fn get_advance_width(&self, stem_direction: &StemDirection) -> f32;
+}
+
+impl GetAdvanceWidth for WholeNoteMeta {
+    fn get_advance_width(&self, _stem_direction: &StemDirection) -> f32 {
+        self.advance_width
+    }
+}
+
+impl GetAdvanceWidth for StemNoteMeta {
+    fn get_advance_width(&self, stem_direction: &StemDirection) -> f32 {
+        match stem_direction {
+            StemDirection::UP => self.stem_up_advance_width,
+            StemDirection::DOWN => self.stem_down_advance_width,
+        }
+    }
+}
+
+/// Parse a vector from the raw metadata, making sure to apply the appropriate transformations
+fn parse_raw_vector(raw: (f32, f32)) -> Vector {
+    Vector::new(
+        raw.0 * STANDARD_STAFF_SPACING,
+        raw.1 * -STANDARD_STAFF_SPACING,
+    )
 }
 
 // TODO: Better error handling

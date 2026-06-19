@@ -37,26 +37,28 @@ impl App {
                     let staff = Staff {
                         bars: vec![
                             Bar::new(vec![
-                                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 2),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 1),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 1),
+                            ]),
+                            Bar::new(vec![
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 2),
                                 NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 2),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 1),
                             ]),
                             Bar::new(vec![
                                 NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 3),
-                                NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), 3),
-                                NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), 2),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 4),
+                                NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
+                                NoteOrRest::new(None, 2),
                             ]),
-                            // Bar::new(vec![
-                            //     NoteOrRest::new(None, 2),
-                            //     NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 4),
-                            //     NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), 5),
-                            //     NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), 5),
-                            //     NoteOrRest::new(None, 3),
-                            // ]),
-                            Bar::new(vec![NoteOrRest::new(None, 1)]),
+                            Bar::new(vec![NoteOrRest::new(None, 0)]),
                             Bar::new(vec![
+                                NoteOrRest::new(None, 1),
                                 NoteOrRest::new(None, 2),
                                 NoteOrRest::new(None, 3),
-                                NoteOrRest::new(None, 3),
+                                NoteOrRest::new(None, 4),
+                                NoteOrRest::new(None, 5),
+                                NoteOrRest::new(None, 5),
                             ]),
                         ],
                     };

@@ -1,20 +1,21 @@
-use iced::Size;
 use iced::widget::canvas::{self};
 use iced::{
     Color, Point,
     widget::canvas::{Frame, Path},
 };
+use iced::{Size, Vector};
 
 use crate::colors::HIGHLIGHT_COLOR;
 use crate::constants::STANDARD_STAFF_SPACING;
-use crate::font::{self, FontMeta, StemNoteMeta};
+use crate::font::{self, FontMeta, GetAdvanceWidth, HasStem};
 use crate::pitch::{Pitch, PitchClass};
 
 #[derive(Debug)]
 pub struct NoteOrRest {
     /// When pitch is None its a rest
     pitch: Option<Pitch>,
-    /// 1 -> Whole Note, 2 -> Half Note, 3 - Quarter Note, ...
+    /// 0 -> Whole Note, 1 -> Half Note, 2 - Quarter Note, ...
+    /// Durations shorter than 128th notes note yet implemented
     duration: u8,
 }
 
@@ -59,11 +60,11 @@ impl NoteOrRestEl {
 
     fn compute_right_margin(duration: u8) -> f32 {
         (match duration {
-            0 => panic!("Cannot have duration 0"),
+            0 => 4.,
             1 => 3.,
             2 => 2.,
             3 => 1.,
-            _ => todo!(),
+            _ => 0.5, // TODO: Adjust spacing
         }) * STANDARD_STAFF_SPACING
     }
 
@@ -71,34 +72,24 @@ impl NoteOrRestEl {
         match note_or_rest.pitch {
             None => {
                 // Rest
-                match note_or_rest.duration {
-                    1 => font.rests_meta.whole_rest.advance_width,
-                    2 => font.rests_meta.half_rest.advance_width,
-                    3 => font.rests_meta.quarter_rest.advance_width,
-                    _ => todo!(),
-                }
+                font.rests_meta.rests[note_or_rest.duration as usize].advance_width
             }
             Some(pitch) => {
                 // Note
-                let down = Self::stem_down(&pitch);
-                match note_or_rest.duration {
-                    1 => font.notes_meta.whole_note.advance_width,
-                    2 => {
-                        if down {
-                            font.notes_meta.half_note.stem_down_advance_width
-                        } else {
-                            font.notes_meta.half_note.stem_up_advance_width
-                        }
-                    }
-                    3 => {
-                        if down {
-                            font.notes_meta.quarter_note.stem_down_advance_width
-                        } else {
-                            font.notes_meta.quarter_note.stem_up_advance_width
-                        }
-                    }
-                    _ => todo!(),
-                }
+                let stem_dir = Self::stem_direction(&pitch);
+                let get_advance_width: Box<&dyn GetAdvanceWidth> = match note_or_rest.duration {
+                    0 => Box::new(&font.notes_meta.whole_note),
+                    1 => Box::new(&font.notes_meta.half_note),
+                    2 => Box::new(&font.notes_meta.quarter_note),
+                    3 => Box::new(&font.notes_meta.note_8th),
+                    4 => Box::new(&font.notes_meta.note_16th),
+                    5 => Box::new(&font.notes_meta.note_32nd),
+                    6 => Box::new(&font.notes_meta.note_64th),
+                    7 => Box::new(&font.notes_meta.note_128th),
+                    _ => panic!("Notes shorter than 128th have not been implemented"),
+                };
+
+                get_advance_width.get_advance_width(&stem_dir)
             }
         }
     }
@@ -168,10 +159,15 @@ impl NoteOrRestEl {
         match &self.note_or_rest.pitch {
             None => {
                 let glyph_str = match self.note_or_rest.duration {
-                    1 => "\u{E4E3}",
-                    2 => "\u{E4E4}",
-                    3 => "\u{E4E5}",
-                    _ => todo!(),
+                    0 => "\u{E4E3}",
+                    1 => "\u{E4E4}",
+                    2 => "\u{E4E5}",
+                    3 => "\u{E4E6}",
+                    4 => "\u{E4E7}",
+                    5 => "\u{E4E8}",
+                    6 => "\u{E4E9}",
+                    7 => "\u{E4EA}",
+                    _ => panic!("Rests shorter than 128th not yet implemented"),
                 };
 
                 draw_glyph(
@@ -211,35 +207,51 @@ fn draw_note(
     color: Option<Color>,
     font_meta: &FontMeta,
 ) {
+    if duration > 7 {
+        panic!("Notes with duration less than 128th not yet implemented");
+    }
+
     let notes_meta = &font_meta.notes_meta;
     let thickness = font_meta.engraving_defaults.stem_thickness;
+
+    let note_head_glyph = match duration {
+        0 => "\u{E0A2}",
+        1 => "\u{E0A3}",
+        _ => "\u{E0A4}",
+    };
+    let note_head_color = draw_glyph(
+        frame,
+        note_head_glyph,
+        position,
+        color,
+        &font_meta.font_iced,
+    );
+
     match duration {
-        1 => {
-            draw_glyph(frame, "\u{E0A2}", position, color, &font_meta.font_iced);
-        }
-        2 => {
-            let color = draw_glyph(frame, "\u{E0A3}", position, color, &font_meta.font_iced);
-            draw_stem(
-                frame,
-                &position,
-                &notes_meta.half_note.stem,
-                &stem_direction,
-                thickness,
-                &color,
-            );
-        }
+        0 => (),
         _ => {
-            let color = draw_glyph(frame, "\u{E0A4}", position, color, &font_meta.font_iced);
+            let stem_meta = match duration {
+                1 => &notes_meta.half_note,
+                2 => &notes_meta.quarter_note,
+                3 => &notes_meta.note_8th,
+                4 => &notes_meta.note_16th,
+                5 => &notes_meta.note_32nd,
+                6 => &notes_meta.note_64th,
+                7 => &notes_meta.note_128th,
+                _ => panic!(),
+            };
             draw_stem(
                 frame,
                 &position,
-                &notes_meta.quarter_note.stem,
+                stem_meta,
                 &stem_direction,
                 thickness,
-                &color,
+                &note_head_color,
+                duration,
+                font_meta,
             );
         }
-    }
+    };
 }
 
 // Returns the color the glyph was drawn as
@@ -266,15 +278,18 @@ fn draw_glyph(
     _color
 }
 
+/// Draws flags also
 fn draw_stem(
     frame: &mut Frame,
     note_position: &Point,
-    stem_meta: &StemNoteMeta,
+    stem_meta: &impl HasStem,
     stem_direction: &StemDirection,
     thickness: f32,
     color: &Color,
+    duration: u8,
+    font_meta: &FontMeta,
 ) {
-    let anchor = *note_position + stem_meta.get_anchor(stem_direction);
+    let anchor = *note_position + stem_meta.get_stem_anchor(stem_direction);
     let sign = match stem_direction {
         StemDirection::UP => -1.,
         StemDirection::DOWN => 1.,
@@ -284,4 +299,46 @@ fn draw_stem(
 
     let stem = Path::rectangle(anchor, Size::new(width, length));
     frame.fill(&stem, *color);
+
+    if duration > 2 {
+        let stem_end = anchor
+            + Vector::new(
+                match stem_direction {
+                    StemDirection::UP => -thickness,
+                    StemDirection::DOWN => 0.,
+                },
+                length,
+            );
+        draw_flag(
+            frame,
+            &stem_end,
+            &stem_direction,
+            &color,
+            duration,
+            &font_meta.font_iced,
+        );
+    }
+}
+
+/// `stem_end` is the left side of the note's stem end
+fn draw_flag(
+    frame: &mut Frame,
+    stem_end: &Point,
+    stem_direction: &StemDirection,
+    color: &Color,
+    duration: u8,
+    font: &iced::Font,
+) {
+    if duration <= 2 || duration > 7 {
+        panic!("No flag for note with this duration");
+    }
+
+    let glyph_unicode: u32 = 57920
+        + 2 * (duration as u32 - 3)
+        + (match stem_direction {
+            StemDirection::UP => 0,
+            StemDirection::DOWN => 1,
+        });
+    let glyph = char::from_u32(glyph_unicode).unwrap().to_string();
+    draw_glyph(frame, &glyph, *stem_end, Some(*color), font);
 }
