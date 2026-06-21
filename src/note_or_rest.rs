@@ -170,10 +170,16 @@ impl NoteOrRestEl {
                     _ => panic!("Rests shorter than 128th not yet implemented"),
                 };
 
+                let y = if self.note_or_rest.duration == 0 {
+                    STANDARD_STAFF_SPACING
+                } else {
+                    2. * STANDARD_STAFF_SPACING
+                };
+
                 draw_glyph(
                     frame,
                     glyph_str,
-                    Point::new(self.x, 2. * STANDARD_STAFF_SPACING),
+                    Point::new(self.x, y),
                     color,
                     &font.font_iced,
                 );
