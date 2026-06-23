@@ -14,7 +14,6 @@ use iced::{Color, alignment};
 use iced::{Element, Vector};
 
 mod bar;
-mod canvas_svg;
 mod colors;
 mod constants;
 mod font;
@@ -122,7 +121,6 @@ impl App {
                 let staff_canvas = canvas(staff).width(Fill).height(Fill);
 
                 // The layout
-
                 let glyph_button = |base_duration: BaseDuration| -> Button<'_, Message> {
                     let glyph = match base_duration.0 {
                         0 => "\u{E1D2}",

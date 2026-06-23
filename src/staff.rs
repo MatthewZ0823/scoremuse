@@ -3,7 +3,7 @@ use std::cmp::min;
 
 use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::constants::STANDARD_STAFF_SPACING;
-use crate::note_or_rest::{BaseDuration, NoteOrRest, NoteOrRestEl};
+use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pitch::Pitch;
 use crate::{FontMeta, note_or_rest};
 use iced::widget::Action;
