@@ -6,8 +6,7 @@ use crate::font::{FontMeta, load_font};
 use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pitch::{Pitch, PitchClass};
 use crate::staff::{
-    Staff, StaffEl, StaffIndex, StaffInteractionMsg, StaffInteractionState,
-    handle_staff_interaction_msg,
+    Staff, StaffEl, StaffInteractionMsg, StaffInteractionState, handle_staff_interaction_msg,
 };
 use iced::Fill;
 use iced::widget::{Button, button, canvas, column, float, row, text};
