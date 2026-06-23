@@ -90,7 +90,7 @@ pub struct NotesMeta {
 
 #[derive(Clone, Debug)]
 pub struct RestsMeta {
-    /// `rests[duration]` is the metadata for the rest with `duration`
+    /// `rests[base_duration.0]` is the metadata for the rest with `base_duration`
     pub rests: [RestMeta; 8],
 }
 
@@ -150,6 +150,7 @@ pub trait HasStem {
     /// Get the length of the stem if there are no modifications to the length
     ///
     /// Positive is down (+y), negative is up (-y)
+    /// TODO: I don't think this is used
     fn get_signed_length(&self, stem_direction: &StemDirection) -> f32;
 
     /// Get the (unsigned) length of the stem if there are no modifications to the length
@@ -172,7 +173,7 @@ impl HasStem for StemAnchors {
             StemDirection::UP => -1.,
             StemDirection::DOWN => 1.,
         };
-        sign * 3.5 * STANDARD_STAFF_SPACING + anchor.y
+        sign * 3.5 * STANDARD_STAFF_SPACING - anchor.y
     }
 }
 

@@ -1,11 +1,11 @@
 use core::f32;
 use std::cmp::min;
 
-use crate::FontMeta;
 use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::constants::STANDARD_STAFF_SPACING;
-use crate::note_or_rest::NoteOrRest;
+use crate::note_or_rest::{BaseDuration, NoteOrRest, NoteOrRestEl};
 use crate::pitch::Pitch;
+use crate::{FontMeta, note_or_rest};
 use iced::widget::Action;
 use iced::widget::canvas::{self, Frame};
 use iced::{Color, Point, Rectangle, Renderer, Theme, Vector, mouse};
@@ -30,6 +30,7 @@ pub struct StaffEl {
     font: FontMeta,
     // Invariant: `width` should be the rendered width of `staff`
     width: f32,
+    pub staff_interaction: StaffInteractionState,
 }
 
 impl StaffEl {
@@ -51,6 +52,7 @@ impl StaffEl {
             font: font,
             cache: canvas::Cache::default(),
             width,
+            staff_interaction: StaffInteractionState::default(),
         }
     }
 
@@ -58,32 +60,54 @@ impl StaffEl {
         self.width
     }
 
+    pub fn get_font(&self) -> iced::Font {
+        self.font.font_iced
+    }
+
     pub fn add_bar(self: &mut Self) {
-        let new_bar = Bar::new(vec![NoteOrRest::new(None, 1)]);
+        let new_bar = Bar::new(vec![NoteOrRest::new(None, note_or_rest::BaseDuration(1))]);
         let new_el = BarEl::new(new_bar, self.width, &self.font);
         self.width += new_el.get_width();
         self.bars.push(new_el);
     }
 
-    pub fn set_note(self: &mut Self, staff_index: &StaffIndex, pitch: Pitch) {
+    /// May change the layout of self
+    pub fn set_note_pitch(self: &mut Self, staff_index: &StaffIndex, pitch: Pitch) {
         let bar = &mut self.bars[staff_index.bar_index];
         let w = bar.get_width();
-        bar.set_note(staff_index.note_index, pitch, &self.font);
+        bar.set_note_pitch(staff_index.note_index, pitch, &self.font);
         let dw = bar.get_width() - w;
-        for i in staff_index.bar_index + 1..self.bars.len() {
-            self.bars[i].translate_x(dw);
-        }
-        self.width += dw;
+        self.fix_layout(staff_index.bar_index, dw);
+    }
+
+    /// May change the layout of self
+    pub fn set_note_base_duration(
+        self: &mut Self,
+        staff_index: &StaffIndex,
+        base_duration: BaseDuration,
+    ) {
+        let bar = &mut self.bars[staff_index.bar_index];
+        let w = bar.get_width();
+        bar.set_note_base_duration(staff_index.note_index, base_duration, &self.font);
+        let dw = bar.get_width() - w;
+        self.fix_layout(staff_index.bar_index, dw);
     }
 
     pub fn redraw(&mut self) {
         self.cache.clear();
     }
+
+    /// Fix the layout after modifying bar at `bar_index` by width `d_width`
+    fn fix_layout(&mut self, bar_index: usize, d_width: f32) {
+        for i in bar_index + 1..self.bars.len() {
+            self.bars[i].translate_x(d_width);
+        }
+        self.width += d_width;
+    }
 }
 
 #[derive(Default)]
 pub struct State {
-    staff_interaction: StaffInteraction,
     hovering_new_bar: bool,
     new_bar_button_bounds: Rectangle,
     staff_transformation: StaffTransformation,
@@ -101,18 +125,18 @@ impl Default for StaffTransformation {
     fn default() -> Self {
         Self {
             scale: 0.1,
-            translation: Vector::new(0., 2. * STANDARD_STAFF_SPACING),
+            translation: Vector::new(0., 8. * STANDARD_STAFF_SPACING),
         }
     }
 }
 
-#[derive(Debug, Default)]
-enum StaffInteraction {
+#[derive(PartialEq, Eq, Debug, Default)]
+pub enum StaffInteractionState {
     #[default]
     None,
-    // Hovering a note
+    /// Hovering a note
     Hovering(StaffIndex),
-    // Selected note at `NoteIndex` and mouse is hovering `Pitch`
+    /// Selected note at `StaffIndex` and the preview note has `Pitch`
     Selected(StaffIndex, Pitch),
 }
 
@@ -177,6 +201,57 @@ fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, thickness: f32) {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum StaffInteractionMsg {
+    /// Note at `StaffIndex` been selected and the preview note has `Pitch`
+    SetPreviewNotePitch(StaffIndex, Pitch),
+    /// Set the pitch of the selected note to that of the preview note
+    CommitPreviewNote,
+    /// Start hovering the note at `StaffIndex`
+    StartHovering(StaffIndex),
+    /// Stop hovering note
+    StopHovering,
+}
+
+pub fn handle_staff_interaction_msg(
+    staff_interaction_msg: StaffInteractionMsg,
+    staff: &mut StaffEl,
+) {
+    let mut staff_modified = false;
+
+    // Triggers a redraw if the staff_interaction changed
+    let mut update_staff_interaction = |new_staff_interaction| {
+        if new_staff_interaction != staff.staff_interaction {
+            staff.staff_interaction = new_staff_interaction;
+            staff_modified = true;
+        }
+    };
+
+    match staff_interaction_msg {
+        StaffInteractionMsg::SetPreviewNotePitch(staff_index, preview_pitch) => {
+            update_staff_interaction(StaffInteractionState::Selected(staff_index, preview_pitch));
+        }
+        StaffInteractionMsg::CommitPreviewNote => match staff.staff_interaction {
+            StaffInteractionState::Selected(staff_index, preview_pitch) => {
+                staff.staff_interaction = StaffInteractionState::None;
+                staff.set_note_pitch(&staff_index, preview_pitch);
+                staff_modified = true;
+            }
+            StaffInteractionState::None | StaffInteractionState::Hovering(..) => (),
+        },
+        StaffInteractionMsg::StartHovering(staff_index) => {
+            update_staff_interaction(StaffInteractionState::Hovering(staff_index));
+        }
+        StaffInteractionMsg::StopHovering => {
+            update_staff_interaction(StaffInteractionState::None);
+        }
+    }
+
+    if staff_modified {
+        staff.redraw();
+    }
+}
+
 impl canvas::Program<Message> for StaffEl {
     type State = State;
 
@@ -197,8 +272,7 @@ impl canvas::Program<Message> for StaffEl {
         };
         state.new_bar_button_bounds = new_bar_button_bounds;
         let cursor_position = cursor
-            .position()
-            .map(|p| absolute_to_widget_space(p, &bounds))
+            .position_in(bounds)
             .map(|p| widget_to_staff_space(p, &state.staff_transformation));
 
         match event {
@@ -211,25 +285,28 @@ impl canvas::Program<Message> for StaffEl {
                                     return Some(canvas::Action::publish(Message::AddBar));
                                 }
 
-                                match state.staff_interaction {
-                                    StaffInteraction::None => (),
-                                    StaffInteraction::Hovering(staff_index) => {
-                                        // TODO: Rerender
+                                match self.staff_interaction {
+                                    StaffInteractionState::None => (),
+                                    StaffInteractionState::Hovering(staff_index) => {
                                         if let Some(hovered_pitch) =
                                             Pitch::from_y_offset(position.y)
                                         {
-                                            state.staff_interaction = StaffInteraction::Selected(
-                                                staff_index,
-                                                hovered_pitch,
-                                            );
+                                            return Some(canvas::Action::publish(
+                                                Message::StaffInteractionMsg(
+                                                    StaffInteractionMsg::SetPreviewNotePitch(
+                                                        staff_index,
+                                                        hovered_pitch,
+                                                    ),
+                                                ),
+                                            ));
                                         }
                                     }
-                                    StaffInteraction::Selected(staff_index, pitch) => {
-                                        state.staff_interaction = StaffInteraction::None;
-                                        return Some(canvas::Action::publish(Message::SetNote(
-                                            staff_index,
-                                            pitch,
-                                        )));
+                                    StaffInteractionState::Selected(..) => {
+                                        return Some(canvas::Action::publish(
+                                            Message::StaffInteractionMsg(
+                                                StaffInteractionMsg::CommitPreviewNote,
+                                            ),
+                                        ));
                                     }
                                 }
                             }
@@ -238,69 +315,65 @@ impl canvas::Program<Message> for StaffEl {
                     }
                     return None;
                 }
-                mouse::Event::CursorMoved { .. } => match cursor_position {
-                    Some(position) => {
-                        let mut should_rerender;
-
-                        if state.new_bar_button_bounds.contains(position) {
-                            should_rerender = !state.hovering_new_bar;
-                            state.hovering_new_bar = true;
-                        } else {
-                            should_rerender = state.hovering_new_bar;
-                            state.hovering_new_bar = false;
-                        }
-
-                        let hovering = get_hovering(&position, self);
-                        match &state.staff_interaction {
-                            StaffInteraction::None => {
-                                if let Some(staff_index) = hovering {
-                                    should_rerender = true;
-                                    state.staff_interaction =
-                                        StaffInteraction::Hovering(staff_index);
-                                }
+                mouse::Event::CursorMoved { .. } => {
+                    match cursor_position {
+                        Some(position) => {
+                            let new_bar_state_changed;
+                            if state.new_bar_button_bounds.contains(position) {
+                                new_bar_state_changed = !state.hovering_new_bar;
+                                state.hovering_new_bar = true;
+                            } else {
+                                new_bar_state_changed = state.hovering_new_bar;
+                                state.hovering_new_bar = false;
                             }
-                            StaffInteraction::Hovering(staff_index) => match hovering {
-                                Some(hovering_index) => {
-                                    if hovering_index != *staff_index {
-                                        should_rerender = true;
-                                        state.staff_interaction =
-                                            StaffInteraction::Hovering(hovering_index);
+                            if new_bar_state_changed {
+                                self.cache.clear();
+                                return Some(Action::request_redraw());
+                            }
+
+                            let hovering = get_hovering(&position, self);
+                            match self.staff_interaction {
+                                StaffInteractionState::None
+                                | StaffInteractionState::Hovering(..) => match hovering {
+                                    Some(hovering_index) => {
+                                        return Some(canvas::Action::publish(
+                                            Message::StaffInteractionMsg(
+                                                StaffInteractionMsg::StartHovering(hovering_index),
+                                            ),
+                                        ));
+                                    }
+                                    None => {
+                                        return Some(canvas::Action::publish(
+                                            Message::StaffInteractionMsg(
+                                                StaffInteractionMsg::StopHovering,
+                                            ),
+                                        ));
+                                    }
+                                },
+                                StaffInteractionState::Selected(staff_index, _) => {
+                                    if let Some(hovered_pitch) = Pitch::from_y_offset(position.y) {
+                                        return Some(canvas::Action::publish(
+                                            Message::StaffInteractionMsg(
+                                                StaffInteractionMsg::SetPreviewNotePitch(
+                                                    staff_index,
+                                                    hovered_pitch,
+                                                ),
+                                            ),
+                                        ));
                                     }
                                 }
-                                None => {
-                                    should_rerender = true;
-                                    state.staff_interaction = StaffInteraction::None;
-                                }
-                            },
-                            StaffInteraction::Selected(staff_index, pitch) => {
-                                let hovered_pitch = Pitch::from_y_offset(position.y);
-                                if let Some(p) = hovered_pitch
-                                    && p != *pitch
-                                {
-                                    state.staff_interaction =
-                                        StaffInteraction::Selected(*staff_index, p);
-                                    should_rerender = true;
-                                }
                             }
                         }
-
-                        if should_rerender {
-                            self.cache.clear();
-                            Some(Action::request_redraw())
-                        } else {
-                            None
+                        None => {
+                            if state.hovering_new_bar {
+                                state.hovering_new_bar = false;
+                                self.cache.clear();
+                                return Some(Action::request_redraw());
+                            }
                         }
                     }
-                    None => {
-                        if state.hovering_new_bar {
-                            state.hovering_new_bar = false;
-                            self.cache.clear();
-                            Some(Action::request_redraw())
-                        } else {
-                            None
-                        }
-                    }
-                },
+                    return None;
+                }
                 _ => None,
             },
             iced::Event::Keyboard(_event) => None,
@@ -385,18 +458,18 @@ impl canvas::Program<Message> for StaffEl {
                 // );
 
                 for (i, bar) in self.bars.iter().enumerate() {
-                    let bar_interaction = match &state.staff_interaction {
-                        StaffInteraction::None => BarInteraction::None,
-                        StaffInteraction::Hovering(staff_index) => {
+                    let bar_interaction = match self.staff_interaction {
+                        StaffInteractionState::None => BarInteraction::None,
+                        StaffInteractionState::Hovering(staff_index) => {
                             if staff_index.bar_index == i {
                                 BarInteraction::Hovering(staff_index.note_index)
                             } else {
                                 BarInteraction::None
                             }
                         }
-                        StaffInteraction::Selected(staff_idx, selected_pitch) => {
+                        StaffInteractionState::Selected(staff_idx, selected_pitch) => {
                             if staff_idx.bar_index == i {
-                                BarInteraction::Selected(staff_idx.note_index, *selected_pitch)
+                                BarInteraction::Selected(staff_idx.note_index, selected_pitch)
                             } else {
                                 BarInteraction::None
                             }
@@ -408,12 +481,6 @@ impl canvas::Program<Message> for StaffEl {
         });
         vec![geom]
     }
-}
-
-/// Absolute space is the absolute position, and widget space is the space within the given bounds,
-/// with the bounds' origin as the origin of the space
-fn absolute_to_widget_space(point: Point, bounds: &Rectangle) -> Point {
-    point - Vector::new(bounds.x, bounds.y)
 }
 
 /// Widget space is the space within the bounds of the canvas widget, with no scale applied

@@ -4,30 +4,67 @@ use iced::{
     widget::canvas::{Frame, Path},
 };
 use iced::{Size, Vector};
+use num_traits::Pow;
 
 use crate::colors::HIGHLIGHT_COLOR;
 use crate::constants::STANDARD_STAFF_SPACING;
 use crate::font::{self, FontMeta, GetAdvanceWidth, HasStem};
 use crate::pitch::{Pitch, PitchClass};
 
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+/// 0 -> Whole Note, 1 -> Half Note, 2 - Quarter Note, ...
+/// Durations shorter than 128th notes note yet implemented
+pub struct BaseDuration(pub u8);
+
+impl BaseDuration {
+    /// Gets the duration of the note in beats
+    pub fn get_duration_beats(&self) -> f32 {
+        2_f32.pow(2. - self.0 as f32)
+    }
+
+    /// Construct a base duration from a number of beats
+    ///
+    /// TODO: Make work for different time signatures
+    /// TODO: Handle not clean number of beats, ie dotted notes
+    pub fn from_duration_beats(beats: f32) -> Self {
+        Self((2 - beats.log2() as i32) as u8)
+    }
+}
+
+impl PartialOrd for BaseDuration {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BaseDuration {
+    // Order is flippde
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.0.cmp(&self.0)
+    }
+}
+
 #[derive(Debug)]
 pub struct NoteOrRest {
     /// When pitch is None its a rest
     pitch: Option<Pitch>,
-    /// 0 -> Whole Note, 1 -> Half Note, 2 - Quarter Note, ...
-    /// Durations shorter than 128th notes note yet implemented
-    duration: u8,
+    base_duration: BaseDuration,
 }
 
 impl NoteOrRest {
-    pub fn new(pitch: Option<Pitch>, duration: u8) -> Self {
+    pub fn new(pitch: Option<Pitch>, base_duration: BaseDuration) -> Self {
         NoteOrRest {
             pitch: pitch,
-            duration: duration,
+            base_duration,
         }
+    }
+
+    pub fn get_base_duration(&self) -> BaseDuration {
+        self.base_duration
     }
 }
 
+#[derive(Debug)]
 pub struct NoteOrRestEl {
     note_or_rest: NoteOrRest,
     // X-Coordinate of the glyph's X=0, in staff space
@@ -48,7 +85,7 @@ pub enum NoteInteraction {
 impl NoteOrRestEl {
     pub fn new(note_or_rest: NoteOrRest, x: f32, font: &font::FontMeta) -> Self {
         let advance_width = Self::compute_advance_width(&note_or_rest, font);
-        let right_margin = Self::compute_right_margin(note_or_rest.duration);
+        let right_margin = Self::compute_right_margin(&note_or_rest.base_duration);
 
         Self {
             note_or_rest,
@@ -58,8 +95,8 @@ impl NoteOrRestEl {
         }
     }
 
-    fn compute_right_margin(duration: u8) -> f32 {
-        (match duration {
+    fn compute_right_margin(base_duration: &BaseDuration) -> f32 {
+        (match base_duration.0 {
             0 => 4.,
             1 => 3.,
             2 => 2.,
@@ -72,22 +109,23 @@ impl NoteOrRestEl {
         match note_or_rest.pitch {
             None => {
                 // Rest
-                font.rests_meta.rests[note_or_rest.duration as usize].advance_width
+                font.rests_meta.rests[note_or_rest.base_duration.0 as usize].advance_width
             }
             Some(pitch) => {
                 // Note
                 let stem_dir = Self::stem_direction(&pitch);
-                let get_advance_width: Box<&dyn GetAdvanceWidth> = match note_or_rest.duration {
-                    0 => Box::new(&font.notes_meta.whole_note),
-                    1 => Box::new(&font.notes_meta.half_note),
-                    2 => Box::new(&font.notes_meta.quarter_note),
-                    3 => Box::new(&font.notes_meta.note_8th),
-                    4 => Box::new(&font.notes_meta.note_16th),
-                    5 => Box::new(&font.notes_meta.note_32nd),
-                    6 => Box::new(&font.notes_meta.note_64th),
-                    7 => Box::new(&font.notes_meta.note_128th),
-                    _ => panic!("Notes shorter than 128th have not been implemented"),
-                };
+                let get_advance_width: Box<&dyn GetAdvanceWidth> =
+                    match note_or_rest.base_duration.0 {
+                        0 => Box::new(&font.notes_meta.whole_note),
+                        1 => Box::new(&font.notes_meta.half_note),
+                        2 => Box::new(&font.notes_meta.quarter_note),
+                        3 => Box::new(&font.notes_meta.note_8th),
+                        4 => Box::new(&font.notes_meta.note_16th),
+                        5 => Box::new(&font.notes_meta.note_32nd),
+                        6 => Box::new(&font.notes_meta.note_64th),
+                        7 => Box::new(&font.notes_meta.note_128th),
+                        _ => panic!("Notes shorter than 128th have not been implemented"),
+                    };
 
                 get_advance_width.get_advance_width(&stem_dir)
             }
@@ -106,6 +144,15 @@ impl NoteOrRestEl {
         }
     }
 
+    /// Get the duration of this note in beats
+    pub fn get_duration_beats(&self) -> f32 {
+        self.note_or_rest.get_base_duration().get_duration_beats()
+    }
+
+    pub fn get_base_duration(&self) -> BaseDuration {
+        self.note_or_rest.get_base_duration()
+    }
+
     /// Gets the total width of the glyph, including margins
     pub fn get_width(self: &Self) -> f32 {
         self.advance_width + self.right_margin
@@ -121,15 +168,36 @@ impl NoteOrRestEl {
         self.x
     }
 
+    pub fn set_x(self: &mut Self, x: f32) {
+        self.x = x;
+    }
+
     pub fn translate_x(self: &mut Self, dx: f32) {
         self.x += dx;
     }
 
+    pub fn get_pitch(&self) -> Option<Pitch> {
+        self.note_or_rest.pitch
+    }
+
     // Keeps the center the same
     // Assuming only the right width might change on pitch change
-    pub fn set_pitch(self: &mut Self, pitch: Pitch, font: &font::FontMeta) {
+    /// May change width
+    pub fn set_pitch(self: &mut Self, pitch: Pitch, font: &FontMeta) {
         self.note_or_rest.pitch = Some(pitch);
+        self.fix_width(font);
+    }
+
+    /// May change width
+    pub fn set_base_duration(&mut self, base_duration: BaseDuration, font: &FontMeta) {
+        self.note_or_rest.base_duration = base_duration;
+        self.fix_width(font);
+    }
+
+    /// Fix the width after a change in self
+    fn fix_width(&mut self, font: &FontMeta) {
         self.advance_width = Self::compute_advance_width(&self.note_or_rest, font);
+        self.right_margin = Self::compute_right_margin(&self.note_or_rest.base_duration);
     }
 
     // Frame coordinates should be same as staff coordinates
@@ -143,7 +211,7 @@ impl NoteOrRestEl {
         if let NoteInteraction::Selected(hovering_pitch) = note_interaction {
             draw_note(
                 frame,
-                self.note_or_rest.duration,
+                self.note_or_rest.base_duration,
                 Point::new(self.x, hovering_pitch.to_y_offset()),
                 Self::stem_direction(hovering_pitch),
                 Some(Color::from_rgb(0.6, 0.6, 0.6)),
@@ -158,7 +226,7 @@ impl NoteOrRestEl {
 
         match &self.note_or_rest.pitch {
             None => {
-                let glyph_str = match self.note_or_rest.duration {
+                let glyph_str = match self.note_or_rest.base_duration.0 {
                     0 => "\u{E4E3}",
                     1 => "\u{E4E4}",
                     2 => "\u{E4E5}",
@@ -170,7 +238,7 @@ impl NoteOrRestEl {
                     _ => panic!("Rests shorter than 128th not yet implemented"),
                 };
 
-                let y = if self.note_or_rest.duration == 0 {
+                let y = if self.note_or_rest.base_duration.0 == 0 {
                     STANDARD_STAFF_SPACING
                 } else {
                     2. * STANDARD_STAFF_SPACING
@@ -187,7 +255,7 @@ impl NoteOrRestEl {
             Some(pitch) => {
                 draw_note(
                     frame,
-                    self.note_or_rest.duration,
+                    self.note_or_rest.base_duration,
                     Point::new(self.x, (&pitch).to_y_offset()),
                     Self::stem_direction(pitch),
                     color,
@@ -207,20 +275,20 @@ pub enum StemDirection {
 /// Draws a note to `frame`, `frame` should be in staff coordinates
 fn draw_note(
     frame: &mut Frame,
-    duration: u8,
+    base_duration: BaseDuration,
     position: Point,
     stem_direction: StemDirection,
     color: Option<Color>,
     font_meta: &FontMeta,
 ) {
-    if duration > 7 {
-        panic!("Notes with duration less than 128th not yet implemented");
+    if base_duration.0 > 7 {
+        panic!("Notes with base duration less than 128th not yet implemented");
     }
 
     let notes_meta = &font_meta.notes_meta;
     let thickness = font_meta.engraving_defaults.stem_thickness;
 
-    let note_head_glyph = match duration {
+    let note_head_glyph = match base_duration.0 {
         0 => "\u{E0A2}",
         1 => "\u{E0A3}",
         _ => "\u{E0A4}",
@@ -233,10 +301,10 @@ fn draw_note(
         &font_meta.font_iced,
     );
 
-    match duration {
+    match base_duration.0 {
         0 => (),
         _ => {
-            let stem_meta = match duration {
+            let stem_meta = match base_duration.0 {
                 1 => &notes_meta.half_note,
                 2 => &notes_meta.quarter_note,
                 3 => &notes_meta.note_8th,
@@ -253,7 +321,7 @@ fn draw_note(
                 &stem_direction,
                 thickness,
                 &note_head_color,
-                duration,
+                base_duration,
                 font_meta,
             );
         }
@@ -292,7 +360,7 @@ fn draw_stem(
     stem_direction: &StemDirection,
     thickness: f32,
     color: &Color,
-    duration: u8,
+    base_duration: BaseDuration,
     font_meta: &FontMeta,
 ) {
     let anchor = *note_position + stem_meta.get_stem_anchor(stem_direction);
@@ -306,7 +374,7 @@ fn draw_stem(
     let stem = Path::rectangle(anchor, Size::new(width, length));
     frame.fill(&stem, *color);
 
-    if duration > 2 {
+    if base_duration.0 > 2 {
         let stem_end = anchor
             + Vector::new(
                 match stem_direction {
@@ -320,7 +388,7 @@ fn draw_stem(
             &stem_end,
             &stem_direction,
             &color,
-            duration,
+            base_duration,
             &font_meta.font_iced,
         );
     }
@@ -332,15 +400,15 @@ fn draw_flag(
     stem_end: &Point,
     stem_direction: &StemDirection,
     color: &Color,
-    duration: u8,
+    base_duration: BaseDuration,
     font: &iced::Font,
 ) {
-    if duration <= 2 || duration > 7 {
+    if base_duration.0 <= 2 || base_duration.0 > 7 {
         panic!("No flag for note with this duration");
     }
 
     let glyph_unicode: u32 = 57920
-        + 2 * (duration as u32 - 3)
+        + 2 * (base_duration.0 as u32 - 3)
         + (match stem_direction {
             StemDirection::UP => 0,
             StemDirection::DOWN => 1,
