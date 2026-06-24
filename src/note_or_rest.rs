@@ -180,11 +180,10 @@ impl NoteOrRestEl {
         self.note_or_rest.pitch
     }
 
-    // Keeps the center the same
-    // Assuming only the right width might change on pitch change
+    /// Setting pitch to None turns the note into a rest
     /// May change width
-    pub fn set_pitch(self: &mut Self, pitch: Pitch, font: &FontMeta) {
-        self.note_or_rest.pitch = Some(pitch);
+    pub fn set_pitch(self: &mut Self, pitch: Option<Pitch>, font: &FontMeta) {
+        self.note_or_rest.pitch = pitch;
         self.fix_width(font);
     }
 

@@ -33,165 +33,184 @@ impl App {
     fn update(&mut self, message: Message) {
         match &mut self.staff {
             None => match message {
-                Message::FontLoaded(res) => {
-                    let font_meta = res.unwrap(); // TODO: Better error handling
-                    let staff = Staff {
-                        bars: vec![
-                            Bar::new(vec![
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::E, 5)),
-                                    BaseDuration(1),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::G, 4)),
-                                    BaseDuration(1),
-                                ),
-                            ]),
-                            Bar::new(vec![
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::F, 4)),
-                                    BaseDuration(2),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::G, 4)),
-                                    BaseDuration(2),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::A, 4)),
-                                    BaseDuration(1),
-                                ),
-                            ]),
-                            Bar::new(vec![
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::F, 4)),
-                                    BaseDuration(3),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::E, 5)),
-                                    BaseDuration(4),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::F, 4)),
-                                    BaseDuration(4),
-                                ),
-                                NoteOrRest::new(None, BaseDuration(2)),
-                            ]),
-                            Bar::new(vec![NoteOrRest::new(None, BaseDuration(0))]),
-                            Bar::new(vec![
-                                NoteOrRest::new(None, BaseDuration(1)),
-                                NoteOrRest::new(None, BaseDuration(2)),
-                                NoteOrRest::new(None, BaseDuration(3)),
-                                NoteOrRest::new(None, BaseDuration(4)),
-                                NoteOrRest::new(None, BaseDuration(5)),
-                                NoteOrRest::new(None, BaseDuration(5)),
-                            ]),
-                        ],
-                    };
-                    self.staff = Some(StaffEl::new(staff, font_meta));
-                }
-                Message::StaffInteractionMsg(..)
-                | Message::BaseDurationButtonClick(..)
-                | Message::AddBar => (),
-                Message::NoOp => (),
+                Message::LoadingMessage(loading_msg) => handle_loading_message(self, loading_msg),
+                Message::ScoreEditingMessage(..) => (),
             },
             Some(staff) => match message {
-                Message::AddBar => {
-                    staff.add_bar();
-                    staff.redraw();
+                Message::LoadingMessage(..) => (),
+                Message::ScoreEditingMessage(score_editing_message) => {
+                    handle_score_editing_message(staff, score_editing_message);
                 }
-                Message::StaffInteractionMsg(staff_interaction_msg) => {
-                    handle_staff_interaction_msg(staff_interaction_msg, staff);
-                }
-                Message::BaseDurationButtonClick(base_duration) => {
-                    if let StaffInteractionState::Selected(staff_idx, _) = staff.staff_interaction {
-                        staff.set_note_base_duration(&staff_idx, base_duration);
-                        staff.staff_interaction = StaffInteractionState::None;
-                        staff.redraw();
-                    }
-                }
-                Message::FontLoaded(..) => (),
-                Message::NoOp => (),
             },
         }
     }
 
     fn view(&self) -> Element<'_, Message> {
         match &self.staff {
-            Some(staff) => {
-                let staff_canvas = canvas(staff).width(Fill).height(Fill);
-
-                // The layout
-                let glyph_button = |base_duration: BaseDuration| -> Button<'_, Message> {
-                    let glyph = match base_duration.0 {
-                        0 => "\u{E1D2}",
-                        1 => "\u{E1D3}",
-                        2 => "\u{E1D5}",
-                        3 => "\u{E1D7}",
-                        4 => "\u{E1D9}",
-                        5 => "\u{E1DB}",
-                        _ => panic!(),
-                    };
-
-                    button(
-                        float(
-                            text(glyph)
-                                .align_y(alignment::Vertical::Bottom)
-                                .font(staff.get_font())
-                                .size(30.)
-                                .color(Color::from_rgb(1., 1., 1.)),
-                        )
-                        .translate(|_, _| Vector::new(0., 10.)),
-                    )
-                    .on_press(Message::BaseDurationButtonClick(base_duration))
-                };
-
-                let duration_controls = row![
-                    glyph_button(BaseDuration(0)),
-                    glyph_button(BaseDuration(1)),
-                    glyph_button(BaseDuration(2)),
-                    glyph_button(BaseDuration(3)),
-                    glyph_button(BaseDuration(4)),
-                    glyph_button(BaseDuration(5)),
-                ]
-                .spacing(4.)
-                .padding([0., 4.])
-                .height(100.);
-
-                let interface: Element<_> = column![
-                    text("hello world").height(100),
-                    duration_controls,
-                    staff_canvas
-                ]
-                .height(Fill)
-                .width(Fill)
-                .into();
-
-                let explained = if DEBUG {
-                    interface.explain(Color::BLACK)
-                } else {
-                    interface
-                };
-
-                explained
-            }
+            Some(staff) => score_editing_view(staff).map(|msg| Message::ScoreEditingMessage(msg)),
             None => text("loading font...").into(),
+        }
+    }
+}
+
+fn score_editing_view(staff: &StaffEl) -> Element<'_, ScoreEditingMessage> {
+    let staff_canvas = canvas(staff).width(Fill).height(Fill);
+
+    // The layout
+    let change_duration_button = |base_duration: BaseDuration| -> Button<'_, ScoreEditingMessage> {
+        let glyph = match base_duration.0 {
+            0 => "\u{E1D2}",
+            1 => "\u{E1D3}",
+            2 => "\u{E1D5}",
+            3 => "\u{E1D7}",
+            4 => "\u{E1D9}",
+            5 => "\u{E1DB}",
+            _ => panic!(),
+        };
+        let on_press = if let StaffInteractionState::Selected(..) = staff.staff_interaction {
+            Some(ScoreEditingMessage::BaseDurationButtonClick(base_duration))
+        } else {
+            None
+        };
+
+        button(
+            float(
+                text(glyph)
+                    .align_y(alignment::Vertical::Bottom)
+                    .font(staff.get_font())
+                    .size(30.)
+                    .color(Color::from_rgb(1., 1., 1.)),
+            )
+            .translate(|_, _| Vector::new(0., 10.)),
+        )
+        .on_press_maybe(on_press)
+    };
+
+    let toggle_rest_button_msg =
+        if let StaffInteractionState::Selected(..) = staff.staff_interaction {
+            Some(ScoreEditingMessage::ToggleRestButtonClick)
+        } else {
+            None
+        };
+    let toggle_rest_button: Button<'_, ScoreEditingMessage> =
+        button(text("\u{E4E5}").font(staff.get_font()).size(30.))
+            .on_press_maybe(toggle_rest_button_msg);
+
+    let duration_controls = row![
+        change_duration_button(BaseDuration(0)),
+        change_duration_button(BaseDuration(1)),
+        change_duration_button(BaseDuration(2)),
+        change_duration_button(BaseDuration(3)),
+        change_duration_button(BaseDuration(4)),
+        change_duration_button(BaseDuration(5)),
+        toggle_rest_button,
+    ]
+    .spacing(4.)
+    .padding([10., 4.]);
+
+    let interface: Element<_> = column![duration_controls, staff_canvas]
+        .height(Fill)
+        .width(Fill)
+        .into();
+
+    let explained = if DEBUG {
+        interface.explain(Color::BLACK)
+    } else {
+        interface
+    };
+
+    explained
+}
+
+fn handle_score_editing_message(staff: &mut StaffEl, score_editing_message: ScoreEditingMessage) {
+    match score_editing_message {
+        ScoreEditingMessage::AddBar => {
+            staff.add_bar();
+            staff.redraw();
+        }
+        ScoreEditingMessage::StaffInteractionMsg(staff_interaction_msg) => {
+            handle_staff_interaction_msg(staff_interaction_msg, staff);
+        }
+        ScoreEditingMessage::BaseDurationButtonClick(base_duration) => {
+            if let StaffInteractionState::Selected(staff_idx, _) = staff.staff_interaction {
+                staff.set_note_base_duration(&staff_idx, base_duration);
+                staff.staff_interaction = StaffInteractionState::None;
+                staff.redraw();
+            }
+        }
+        ScoreEditingMessage::ToggleRestButtonClick => {
+            if let StaffInteractionState::Selected(staff_idx, _) = staff.staff_interaction {
+                staff.set_note_pitch(&staff_idx, None);
+                staff.staff_interaction = StaffInteractionState::None;
+                staff.redraw();
+            }
         }
     }
 }
 
 #[derive(Debug, Clone)]
 enum Message {
+    LoadingMessage(LoadingMessage),
+    ScoreEditingMessage(ScoreEditingMessage),
+}
+
+/// Messages when the app is in the loading state
+#[derive(Debug, Clone)]
+enum LoadingMessage {
     FontLoaded(Result<FontMeta, font::Error>),
+}
+
+fn handle_loading_message(app: &mut App, loading_message: LoadingMessage) {
+    match loading_message {
+        LoadingMessage::FontLoaded(res) => {
+            let font_meta = res.unwrap(); // TODO: Better error handling
+            let staff = Staff {
+                bars: vec![
+                    Bar::new(vec![
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), BaseDuration(1)),
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), BaseDuration(1)),
+                    ]),
+                    Bar::new(vec![
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), BaseDuration(2)),
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::G, 4)), BaseDuration(2)),
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::A, 4)), BaseDuration(1)),
+                    ]),
+                    Bar::new(vec![
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), BaseDuration(3)),
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::E, 5)), BaseDuration(4)),
+                        NoteOrRest::new(Some(Pitch::new(PitchClass::F, 4)), BaseDuration(4)),
+                        NoteOrRest::new(None, BaseDuration(2)),
+                    ]),
+                    Bar::new(vec![NoteOrRest::new(None, BaseDuration(0))]),
+                    Bar::new(vec![
+                        NoteOrRest::new(None, BaseDuration(1)),
+                        NoteOrRest::new(None, BaseDuration(2)),
+                        NoteOrRest::new(None, BaseDuration(3)),
+                        NoteOrRest::new(None, BaseDuration(4)),
+                        NoteOrRest::new(None, BaseDuration(5)),
+                        NoteOrRest::new(None, BaseDuration(5)),
+                    ]),
+                ],
+            };
+            app.staff = Some(StaffEl::new(staff, font_meta));
+        }
+    }
+}
+
+/// Messages when the app is in the score editing state
+#[derive(Debug, Clone)]
+enum ScoreEditingMessage {
     StaffInteractionMsg(StaffInteractionMsg),
     BaseDurationButtonClick(BaseDuration),
+    ToggleRestButtonClick,
     AddBar,
-    NoOp,
 }
 
 fn boot() -> (App, iced::Task<Message>) {
     (
         App::default(),
-        load_font("Bravura".to_string()).map(|m| Message::FontLoaded(m)),
+        load_font("Bravura".to_string())
+            .map(|m| Message::LoadingMessage(LoadingMessage::FontLoaded(m))),
     )
 }
 

@@ -101,8 +101,14 @@ impl BarEl {
         &self.notes
     }
 
+    /// Setting pitch to None changes the note to arest
     /// May change the layout of the bar
-    pub fn set_note_pitch(&mut self, note_index: usize, pitch: Pitch, font: &font::FontMeta) {
+    pub fn set_note_pitch(
+        &mut self,
+        note_index: usize,
+        pitch: Option<Pitch>,
+        font: &font::FontMeta,
+    ) {
         self.notes[note_index].set_pitch(pitch, font);
         self.fix_layout(font);
     }

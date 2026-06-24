@@ -5,12 +5,10 @@ use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::constants::STANDARD_STAFF_SPACING;
 use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pitch::Pitch;
-use crate::{FontMeta, note_or_rest};
+use crate::{FontMeta, ScoreEditingMessage, note_or_rest};
 use iced::widget::Action;
 use iced::widget::canvas::{self, Frame};
 use iced::{Color, Point, Rectangle, Renderer, Theme, Vector, mouse};
-
-use crate::Message;
 
 // Padding in front first bar
 const PREAMBLE_WIDTH: f32 = 100.;
@@ -71,8 +69,10 @@ impl StaffEl {
         self.bars.push(new_el);
     }
 
+    /// Setting to None changes the note to a rest
+    ///
     /// May change the layout of self
-    pub fn set_note_pitch(self: &mut Self, staff_index: &StaffIndex, pitch: Pitch) {
+    pub fn set_note_pitch(self: &mut Self, staff_index: &StaffIndex, pitch: Option<Pitch>) {
         let bar = &mut self.bars[staff_index.bar_index];
         let w = bar.get_width();
         bar.set_note_pitch(staff_index.note_index, pitch, &self.font);
@@ -195,7 +195,6 @@ fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, thickness: f32) {
     for i in 0..5 {
         let y = i as f32 * spacing;
         let from = Point::new(bounds.x, y - thickness / 2.);
-        // let to = Point::new(bounds.x + bounds.width, y);
         let path = canvas::Path::rectangle(from, iced::Size::new(bounds.width, thickness));
         frame.fill(&path, Color::BLACK);
     }
@@ -234,7 +233,7 @@ pub fn handle_staff_interaction_msg(
         StaffInteractionMsg::CommitPreviewNote => match staff.staff_interaction {
             StaffInteractionState::Selected(staff_index, preview_pitch) => {
                 staff.staff_interaction = StaffInteractionState::None;
-                staff.set_note_pitch(&staff_index, preview_pitch);
+                staff.set_note_pitch(&staff_index, Some(preview_pitch));
                 staff_modified = true;
             }
             StaffInteractionState::None | StaffInteractionState::Hovering(..) => (),
@@ -252,7 +251,7 @@ pub fn handle_staff_interaction_msg(
     }
 }
 
-impl canvas::Program<Message> for StaffEl {
+impl canvas::Program<ScoreEditingMessage> for StaffEl {
     type State = State;
 
     fn update(
@@ -261,7 +260,7 @@ impl canvas::Program<Message> for StaffEl {
         event: &iced::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<canvas::Action<Message>> {
+    ) -> Option<canvas::Action<ScoreEditingMessage>> {
         // TODO: Clean up update logic
         let new_bar_width = 4. * STANDARD_STAFF_SPACING;
         let new_bar_button_bounds = Rectangle {
@@ -282,7 +281,9 @@ impl canvas::Program<Message> for StaffEl {
                         mouse::Button::Left => {
                             if let Some(position) = cursor_position {
                                 if state.new_bar_button_bounds.contains(position) {
-                                    return Some(canvas::Action::publish(Message::AddBar));
+                                    return Some(canvas::Action::publish(
+                                        ScoreEditingMessage::AddBar,
+                                    ));
                                 }
 
                                 match self.staff_interaction {
@@ -292,7 +293,7 @@ impl canvas::Program<Message> for StaffEl {
                                             Pitch::from_y_offset(position.y)
                                         {
                                             return Some(canvas::Action::publish(
-                                                Message::StaffInteractionMsg(
+                                                ScoreEditingMessage::StaffInteractionMsg(
                                                     StaffInteractionMsg::SetPreviewNotePitch(
                                                         staff_index,
                                                         hovered_pitch,
@@ -303,7 +304,7 @@ impl canvas::Program<Message> for StaffEl {
                                     }
                                     StaffInteractionState::Selected(..) => {
                                         return Some(canvas::Action::publish(
-                                            Message::StaffInteractionMsg(
+                                            ScoreEditingMessage::StaffInteractionMsg(
                                                 StaffInteractionMsg::CommitPreviewNote,
                                             ),
                                         ));
@@ -337,14 +338,14 @@ impl canvas::Program<Message> for StaffEl {
                                 | StaffInteractionState::Hovering(..) => match hovering {
                                     Some(hovering_index) => {
                                         return Some(canvas::Action::publish(
-                                            Message::StaffInteractionMsg(
+                                            ScoreEditingMessage::StaffInteractionMsg(
                                                 StaffInteractionMsg::StartHovering(hovering_index),
                                             ),
                                         ));
                                     }
                                     None => {
                                         return Some(canvas::Action::publish(
-                                            Message::StaffInteractionMsg(
+                                            ScoreEditingMessage::StaffInteractionMsg(
                                                 StaffInteractionMsg::StopHovering,
                                             ),
                                         ));
@@ -353,7 +354,7 @@ impl canvas::Program<Message> for StaffEl {
                                 StaffInteractionState::Selected(staff_index, _) => {
                                     if let Some(hovered_pitch) = Pitch::from_y_offset(position.y) {
                                         return Some(canvas::Action::publish(
-                                            Message::StaffInteractionMsg(
+                                            ScoreEditingMessage::StaffInteractionMsg(
                                                 StaffInteractionMsg::SetPreviewNotePitch(
                                                     staff_index,
                                                     hovered_pitch,
