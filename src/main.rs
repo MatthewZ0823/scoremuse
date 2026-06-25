@@ -5,11 +5,12 @@ use crate::bar::Bar;
 use crate::font::{FontMeta, load_font};
 use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pitch::{Pitch, PitchClass};
+use crate::playback::synthesize_staff;
 use crate::staff::{
     Staff, StaffEl, StaffInteractionMsg, StaffInteractionState, handle_staff_interaction_msg,
 };
 use iced::Fill;
-use iced::widget::{Button, button, canvas, column, float, row, text};
+use iced::widget::{Button, button, canvas, column, container, float, row, text};
 use iced::{Color, alignment};
 use iced::{Element, Vector};
 
@@ -19,6 +20,7 @@ mod constants;
 mod font;
 mod note_or_rest;
 mod pitch;
+mod playback;
 mod staff;
 mod utils;
 
@@ -78,8 +80,7 @@ fn score_editing_view(staff: &StaffEl) -> Element<'_, ScoreEditingMessage> {
                 text(glyph)
                     .align_y(alignment::Vertical::Bottom)
                     .font(staff.get_font())
-                    .size(30.)
-                    .color(Color::from_rgb(1., 1., 1.)),
+                    .size(30.), // .color(Color::from_rgb(1., 1., 1.)),
             )
             .translate(|_, _| Vector::new(0., 10.)),
         )
@@ -106,9 +107,14 @@ fn score_editing_view(staff: &StaffEl) -> Element<'_, ScoreEditingMessage> {
         toggle_rest_button,
     ]
     .spacing(4.)
-    .padding([10., 4.]);
+    .padding([0., 4.]);
 
-    let interface: Element<_> = column![duration_controls, staff_canvas]
+    let playback_controls =
+        row![button(text("\u{25B6}")).on_press(ScoreEditingMessage::PlayButtonClick)];
+
+    let controls = row![duration_controls, playback_controls].padding([10., 0.]);
+
+    let interface: Element<_> = column![controls, staff_canvas]
         .height(Fill)
         .width(Fill)
         .into();
@@ -144,6 +150,9 @@ fn handle_score_editing_message(staff: &mut StaffEl, score_editing_message: Scor
                 staff.staff_interaction = StaffInteractionState::None;
                 staff.redraw();
             }
+        }
+        ScoreEditingMessage::PlayButtonClick => {
+            synthesize_staff();
         }
     }
 }
@@ -203,6 +212,7 @@ enum ScoreEditingMessage {
     StaffInteractionMsg(StaffInteractionMsg),
     BaseDurationButtonClick(BaseDuration),
     ToggleRestButtonClick,
+    PlayButtonClick,
     AddBar,
 }
 
@@ -215,5 +225,6 @@ fn boot() -> (App, iced::Task<Message>) {
 }
 
 fn main() -> iced::Result {
+    // synthesize_staff();
     iced::application(boot, App::update, App::view).run()
 }
