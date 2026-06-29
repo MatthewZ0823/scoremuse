@@ -1,5 +1,6 @@
 use core::f32;
 use std::cmp::min;
+use std::time::Duration;
 
 use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::constants::STANDARD_STAFF_SPACING;
@@ -60,6 +61,11 @@ impl StaffEl {
 
     pub fn get_font(&self) -> iced::Font {
         self.font.font_iced
+    }
+
+    /// How long it would take to play the staff
+    pub fn get_duration(&self) -> Duration {
+        self.bars.iter().map(|b| b.get_duration()).sum()
     }
 
     pub fn add_bar(self: &mut Self) {

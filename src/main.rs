@@ -5,14 +5,14 @@ use crate::bar::Bar;
 use crate::font::{FontMeta, load_font};
 use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pitch::{Pitch, PitchClass};
-use crate::playback::synthesize_staff;
+use crate::playback::play_staff;
 use crate::staff::{
     Staff, StaffEl, StaffInteractionMsg, StaffInteractionState, handle_staff_interaction_msg,
 };
-use iced::Fill;
 use iced::widget::{Button, button, canvas, column, container, float, row, text};
-use iced::{Color, alignment};
+use iced::{Color, Padding, alignment};
 use iced::{Element, Vector};
+use iced::{Fill, padding};
 
 mod bar;
 mod colors;
@@ -76,14 +76,17 @@ fn score_editing_view(staff: &StaffEl) -> Element<'_, ScoreEditingMessage> {
         };
 
         button(
-            float(
-                text(glyph)
-                    .align_y(alignment::Vertical::Bottom)
-                    .font(staff.get_font())
-                    .size(30.), // .color(Color::from_rgb(1., 1., 1.)),
-            )
-            .translate(|_, _| Vector::new(0., 10.)),
+            text(glyph)
+                .align_y(alignment::Vertical::Bottom)
+                .font(staff.get_font())
+                .size(30.),
         )
+        .padding(Padding {
+            top: 20.,
+            left: 5.,
+            right: 5.,
+            bottom: -5.,
+        })
         .on_press_maybe(on_press)
     };
 
@@ -152,7 +155,7 @@ fn handle_score_editing_message(staff: &mut StaffEl, score_editing_message: Scor
             }
         }
         ScoreEditingMessage::PlayButtonClick => {
-            synthesize_staff();
+            play_staff(staff);
         }
     }
 }

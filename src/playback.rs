@@ -3,24 +3,24 @@ use std::{fs::File, io::Write, num::NonZero, sync::Arc};
 use rodio::{ChannelCount, Decoder, Source};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
-use crate::staff::StaffEl;
+use crate::{constants::SAMPLE_RATE, staff::StaffEl};
 
-pub fn synthesize_staff() {
+pub fn play_staff(staff: &StaffEl) {
     // Load the SoundFont.
     let mut sf2 = File::open("soundfonts/TimGM6mb.sf2").unwrap();
     let sound_font = Arc::new(SoundFont::new(&mut sf2).unwrap());
 
     // Create the synthesizer.
-    let settings = SynthesizerSettings::new(44100);
+    let settings = SynthesizerSettings::new(SAMPLE_RATE);
     let mut synthesizer = Synthesizer::new(&sound_font, &settings).unwrap();
 
-    // The output buffer (5 seconds).
-    let sample_count = (5 * settings.sample_rate) as usize;
+    // The output buffer
+    let sample_count =
+        staff.get_duration().as_millis() as f32 / 1000. * settings.sample_rate as usize;
     let mut left: Vec<f32> = vec![0_f32; sample_count];
     let mut right: Vec<f32> = vec![0_f32; sample_count];
 
     // Play some notes (middle C, E, G).
-    synthesizer.process_midi_message(0, 0xB0, 0x07, 0x7F);
     synthesizer.note_on(0, 60, 100);
     synthesizer.note_on(0, 64, 100);
     synthesizer.note_on(0, 67, 100);
@@ -35,8 +35,6 @@ pub fn synthesize_staff() {
 
     // Render the waveform.
     synthesizer.render(&mut left[44100..], &mut right[44100..]);
-
-    synthesizer.process_midi_message(0, 0xB0, 0x07, 0x3F);
     synthesizer.note_on(0, 60, 100);
     synthesizer.note_on(0, 64, 100);
     synthesizer.note_on(0, 67, 100);
@@ -51,7 +49,7 @@ pub fn synthesize_staff() {
     // Get an OS-Sink handle to the default physical sound device.
     // Note that the playback stops when the handle is dropped.//!
     let handle = rodio::DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
-    // let player = rodio::Player::connect_new(&handle.mixer());
+    let player = rodio::Player::connect_new(&handle.mixer());
 
     let source = MySource::new(left, right);
 

@@ -1,4 +1,6 @@
-use crate::constants::{BARLINE_LEFT_PADDING, STANDARD_STAFF_SPACING};
+use std::time::Duration;
+
+use crate::constants::{BARLINE_LEFT_PADDING, BPM, STANDARD_STAFF_SPACING};
 use crate::font;
 use crate::note_or_rest::{BaseDuration, NoteInteraction, NoteOrRest, NoteOrRestEl};
 use crate::pitch::Pitch;
@@ -52,6 +54,18 @@ impl BarEl {
         };
         bar.fix_layout(font);
         bar
+    }
+
+    /// How long it would take to play the bar
+    pub fn get_duration(&self) -> Duration {
+        let minutes: f32 = self
+            .notes
+            .iter()
+            .map(|note| note.get_duration_beats())
+            .sum::<f32>()
+            / (BPM as f32);
+
+        Duration::from_secs_f32(minutes * 60.)
     }
 
     pub fn get_width(self: &Self) -> f32 {
