@@ -49,6 +49,20 @@ impl Pitch {
             Some(Pitch::from(p as u8))
         }
     }
+
+    pub fn to_midi_note_number(&self) -> i32 {
+        let within_octave = match self.pitch_class {
+            PitchClass::C => 0,
+            PitchClass::D => 2,
+            PitchClass::E => 4,
+            PitchClass::F => 5,
+            PitchClass::G => 7,
+            PitchClass::A => 9,
+            PitchClass::B => 11,
+        };
+
+        12 + 12 * (self.octave as i32) + within_octave
+    }
 }
 
 impl From<Pitch> for u8 {

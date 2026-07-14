@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::constants::STANDARD_STAFF_SPACING;
+use crate::midi::{MidiMessage, MidiMessageTimed};
 use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pitch::Pitch;
 use crate::{FontMeta, ScoreEditingMessage, note_or_rest};
@@ -63,9 +64,36 @@ impl StaffEl {
         self.font.font_iced
     }
 
-    /// How long it would take to play the staff
-    pub fn get_duration(&self) -> Duration {
-        self.bars.iter().map(|b| b.get_duration()).sum()
+    pub fn get_bars(&self) -> &Vec<BarEl> {
+        &self.bars
+    }
+
+    pub fn get_midi_messages(&self) -> Vec<MidiMessageTimed> {
+        let mut ret = vec![];
+        for bar in self.get_bars() {
+            for note in bar.get_notes() {
+                let mut midi_messages = match note.get_pitch() {
+                    Some(pitch) => vec![
+                        MidiMessageTimed::new(
+                            MidiMessage::note_on(0, pitch.to_midi_note_number(), 100),
+                            note.get_time_duration(),
+                        ),
+                        MidiMessageTimed::new(
+                            MidiMessage::note_off_channel(0, false),
+                            Duration::ZERO,
+                        ),
+                    ],
+                    None => vec![MidiMessageTimed::new(
+                        MidiMessage::note_off_channel(0, false),
+                        note.get_time_duration(),
+                    )],
+                };
+
+                ret.append(&mut midi_messages);
+            }
+        }
+
+        ret
     }
 
     pub fn add_bar(self: &mut Self) {

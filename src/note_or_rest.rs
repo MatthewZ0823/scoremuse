@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use iced::widget::canvas::{self};
 use iced::{
     Color, Point,
@@ -7,7 +9,7 @@ use iced::{Size, Vector};
 use num_traits::Pow;
 
 use crate::colors::HIGHLIGHT_COLOR;
-use crate::constants::STANDARD_STAFF_SPACING;
+use crate::constants::{BPM, STANDARD_STAFF_SPACING};
 use crate::font::{self, FontMeta, GetAdvanceWidth, HasStem};
 use crate::pitch::{Pitch, PitchClass};
 
@@ -151,6 +153,11 @@ impl NoteOrRestEl {
 
     pub fn get_base_duration(&self) -> BaseDuration {
         self.note_or_rest.get_base_duration()
+    }
+
+    /// How long it would take to play the bar
+    pub fn get_time_duration(&self) -> Duration {
+        Duration::from_secs_f32(self.get_duration_beats() / BPM as f32 * 60.)
     }
 
     /// Gets the total width of the glyph, including margins
