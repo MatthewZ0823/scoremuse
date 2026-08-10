@@ -164,19 +164,46 @@ impl Default for StaffTransformation {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Default)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum StaffInteractionState {
-    #[default]
-    None,
-    /// Hovering a note
-    Hovering(StaffIndex),
-    /// Selected note at `StaffIndex` and the preview note has `Pitch`
-    Selected(StaffIndex, Pitch),
+    /// Not dragging a note, could be hovering/selecting a note or both
+    NotDragging {
+        hovering: Option<StaffIndex>,
+        selected: Option<StaffIndex>,
+    },
+    /// Dragging note at `StaffIndex` with cursor
+    Dragging(StaffIndex),
+}
+
+impl Default for StaffInteractionState {
+    fn default() -> Self {
+        Self::NotDragging {
+            hovering: None,
+            selected: None,
+        }
+    }
+}
+
+impl StaffInteractionState {
+    /// Returns the index of the selected note, if one is selected
+    pub fn get_selected(&self) -> Option<&StaffIndex> {
+        match self {
+            Self::NotDragging { selected, .. } => selected.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub const NONE: Self = Self::NotDragging {
+        hovering: None,
+        selected: None,
+    };
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct StaffIndex {
+    /// Which bar the note is in
     bar_index: usize,
+    /// The index of the note within its bar
     note_index: usize,
 }
 
@@ -236,47 +263,89 @@ fn draw_bar_lines(frame: &mut Frame, bounds: Rectangle, thickness: f32) {
 
 #[derive(Clone, Copy, Debug)]
 pub enum StaffInteractionMsg {
-    /// Note at `StaffIndex` been selected and the preview note has `Pitch`
-    SetPreviewNotePitch(StaffIndex, Pitch),
-    /// Set the pitch of the selected note to that of the preview note
-    CommitPreviewNote,
     /// Start hovering the note at `StaffIndex`
     StartHovering(StaffIndex),
     /// Stop hovering note
     StopHovering,
+    /// Select note at `StaffIndex`
+    SelectNote(StaffIndex),
+    /// Unselect the currently selected note
+    UnselectNote,
+    /// Start dragging the note at `StaffIndex`
+    StartDragging(StaffIndex),
+    /// Drag the currently dragged note to `Pitch`
+    DragToPitch(Pitch),
+    /// Stop dragging the note
+    StopDragging,
 }
 
 pub fn handle_staff_interaction_msg(
     staff_interaction_msg: StaffInteractionMsg,
     staff: &mut StaffEl,
 ) {
+    // Whether or not to trigger a redraw
     let mut staff_modified = false;
 
     // Triggers a redraw if the staff_interaction changed
-    let mut update_staff_interaction = |new_staff_interaction| {
-        if new_staff_interaction != staff.staff_interaction {
-            staff.staff_interaction = new_staff_interaction;
-            staff_modified = true;
-        }
-    };
-
-    match staff_interaction_msg {
-        StaffInteractionMsg::SetPreviewNotePitch(staff_index, preview_pitch) => {
-            update_staff_interaction(StaffInteractionState::Selected(staff_index, preview_pitch));
-        }
-        StaffInteractionMsg::CommitPreviewNote => match staff.staff_interaction {
-            StaffInteractionState::Selected(staff_index, preview_pitch) => {
-                staff.staff_interaction = StaffInteractionState::None;
-                staff.set_note_pitch(&staff_index, Some(preview_pitch));
+    macro_rules! update_staff_interaction {
+        ($new_staff_interaction:expr) => {
+            let new_staff_interaction = $new_staff_interaction;
+            if new_staff_interaction != staff.staff_interaction {
+                staff.staff_interaction = new_staff_interaction;
                 staff_modified = true;
             }
-            StaffInteractionState::None | StaffInteractionState::Hovering(..) => (),
-        },
+        };
+    }
+
+    match staff_interaction_msg {
         StaffInteractionMsg::StartHovering(staff_index) => {
-            update_staff_interaction(StaffInteractionState::Hovering(staff_index));
+            if let StaffInteractionState::NotDragging { selected, .. } = staff.staff_interaction {
+                update_staff_interaction!(StaffInteractionState::NotDragging {
+                    hovering: Some(staff_index),
+                    selected,
+                });
+            }
         }
         StaffInteractionMsg::StopHovering => {
-            update_staff_interaction(StaffInteractionState::None);
+            if let StaffInteractionState::NotDragging { selected, .. } = staff.staff_interaction {
+                update_staff_interaction!(StaffInteractionState::NotDragging {
+                    hovering: None,
+                    selected,
+                });
+            }
+        }
+        StaffInteractionMsg::StartDragging(staff_index) => {
+            update_staff_interaction!(StaffInteractionState::Dragging(staff_index));
+        }
+        StaffInteractionMsg::DragToPitch(pitch) => {
+            if let StaffInteractionState::Dragging(staff_index) = &staff.staff_interaction {
+                staff.set_note_pitch(&staff_index.clone(), Some(pitch));
+                staff_modified = true;
+            }
+        }
+        StaffInteractionMsg::StopDragging => {
+            if let StaffInteractionState::Dragging(staff_index) = &staff.staff_interaction {
+                update_staff_interaction!(StaffInteractionState::NotDragging {
+                    selected: Some(staff_index.clone()),
+                    hovering: None,
+                });
+            }
+        }
+        StaffInteractionMsg::SelectNote(staff_index) => {
+            if let StaffInteractionState::NotDragging { hovering, .. } = staff.staff_interaction {
+                update_staff_interaction!(StaffInteractionState::NotDragging {
+                    hovering,
+                    selected: Some(staff_index),
+                });
+            }
+        }
+        StaffInteractionMsg::UnselectNote => {
+            if let StaffInteractionState::NotDragging { hovering, .. } = staff.staff_interaction {
+                update_staff_interaction!(StaffInteractionState::NotDragging {
+                    hovering,
+                    selected: None,
+                });
+            }
         }
     }
 
@@ -321,28 +390,26 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                                 }
 
                                 match self.staff_interaction {
-                                    StaffInteractionState::None => (),
-                                    StaffInteractionState::Hovering(staff_index) => {
-                                        if let Some(hovered_pitch) =
-                                            Pitch::from_y_offset(position.y)
-                                        {
+                                    StaffInteractionState::NotDragging { hovering, selected } => {
+                                        if let Some(staff_index) = hovering {
                                             return Some(canvas::Action::publish(
                                                 ScoreEditingMessage::StaffInteractionMsg(
-                                                    StaffInteractionMsg::SetPreviewNotePitch(
-                                                        staff_index,
-                                                        hovered_pitch,
-                                                    ),
+                                                    StaffInteractionMsg::StartDragging(staff_index),
                                                 ),
                                             ));
                                         }
+
+                                        if let Some(staff_index) = selected {
+                                            if get_hovering(&position, self) != Some(staff_index) {
+                                                return Some(canvas::Action::publish(
+                                                    ScoreEditingMessage::StaffInteractionMsg(
+                                                        StaffInteractionMsg::UnselectNote,
+                                                    ),
+                                                ));
+                                            }
+                                        }
                                     }
-                                    StaffInteractionState::Selected(..) => {
-                                        return Some(canvas::Action::publish(
-                                            ScoreEditingMessage::StaffInteractionMsg(
-                                                StaffInteractionMsg::CommitPreviewNote,
-                                            ),
-                                        ));
-                                    }
+                                    StaffInteractionState::Dragging(..) => {}
                                 }
                             }
                         }
@@ -368,8 +435,7 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
 
                             let hovering = get_hovering(&position, self);
                             match self.staff_interaction {
-                                StaffInteractionState::None
-                                | StaffInteractionState::Hovering(..) => match hovering {
+                                StaffInteractionState::NotDragging { .. } => match hovering {
                                     Some(hovering_index) => {
                                         return Some(canvas::Action::publish(
                                             ScoreEditingMessage::StaffInteractionMsg(
@@ -385,14 +451,11 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                                         ));
                                     }
                                 },
-                                StaffInteractionState::Selected(staff_index, _) => {
-                                    if let Some(hovered_pitch) = Pitch::from_y_offset(position.y) {
+                                StaffInteractionState::Dragging(..) => {
+                                    if let Some(pitch) = Pitch::from_y_offset(position.y) {
                                         return Some(canvas::Action::publish(
                                             ScoreEditingMessage::StaffInteractionMsg(
-                                                StaffInteractionMsg::SetPreviewNotePitch(
-                                                    staff_index,
-                                                    hovered_pitch,
-                                                ),
+                                                StaffInteractionMsg::DragToPitch(pitch),
                                             ),
                                         ));
                                     }
@@ -409,6 +472,17 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     }
                     return None;
                 }
+                mouse::Event::ButtonReleased(button) => match button {
+                    mouse::Button::Left => match self.staff_interaction {
+                        StaffInteractionState::NotDragging { .. } => None,
+                        StaffInteractionState::Dragging(..) => {
+                            Some(Action::publish(ScoreEditingMessage::StaffInteractionMsg(
+                                StaffInteractionMsg::StopDragging,
+                            )))
+                        }
+                    },
+                    _ => None,
+                },
                 _ => None,
             },
             iced::Event::Keyboard(_event) => None,
@@ -494,19 +568,29 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
 
                 for (i, bar) in self.bars.iter().enumerate() {
                     let bar_interaction = match self.staff_interaction {
-                        StaffInteractionState::None => BarInteraction::None,
-                        StaffInteractionState::Hovering(staff_index) => {
-                            if staff_index.bar_index == i {
-                                BarInteraction::Hovering(staff_index.note_index)
-                            } else {
-                                BarInteraction::None
+                        StaffInteractionState::NotDragging { hovering, selected } => {
+                            BarInteraction::NotDragging {
+                                hovering: hovering.and_then(|h| {
+                                    if h.bar_index == i {
+                                        Some(h.note_index)
+                                    } else {
+                                        None
+                                    }
+                                }),
+                                selected: selected.and_then(|h| {
+                                    if h.bar_index == i {
+                                        Some(h.note_index)
+                                    } else {
+                                        None
+                                    }
+                                }),
                             }
                         }
-                        StaffInteractionState::Selected(staff_idx, selected_pitch) => {
-                            if staff_idx.bar_index == i {
-                                BarInteraction::Selected(staff_idx.note_index, selected_pitch)
+                        StaffInteractionState::Dragging(dragging) => {
+                            if dragging.bar_index == i {
+                                BarInteraction::Dragging(dragging.note_index)
                             } else {
-                                BarInteraction::None
+                                BarInteraction::NONE
                             }
                         }
                     };

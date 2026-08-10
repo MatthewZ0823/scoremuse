@@ -31,11 +31,20 @@ pub struct BarEl {
 }
 
 pub enum BarInteraction {
-    None,
-    // Hovering a note at index `usize`
-    Hovering(usize),
-    // Selected a note at index and mouse is hovering pitch
-    Selected(usize, Pitch),
+    /// Not dragging a note in this bar, could be hovering/selecting a note or both
+    NotDragging {
+        hovering: Option<usize>,
+        selected: Option<usize>,
+    },
+    /// Dragging note at `usize` with cursor
+    Dragging(usize),
+}
+
+impl BarInteraction {
+    pub const NONE: Self = Self::NotDragging {
+        hovering: None,
+        selected: None,
+    };
 }
 
 impl BarEl {
@@ -64,23 +73,20 @@ impl BarEl {
         bar_interaction: &BarInteraction,
         font: &font::FontMeta,
     ) {
+        let (hovering, selected, dragging) = match bar_interaction {
+            BarInteraction::NotDragging { hovering, selected } => (hovering, selected, None),
+            BarInteraction::Dragging(dragging) => (&None, &None, Some(dragging)),
+        };
+
         for (i, note) in self.notes.iter().enumerate() {
-            let note_interaction = match bar_interaction {
-                BarInteraction::None => NoteInteraction::None,
-                BarInteraction::Hovering(hovering_idx) => {
-                    if *hovering_idx == i {
-                        NoteInteraction::Hovering
-                    } else {
-                        NoteInteraction::None
-                    }
-                }
-                BarInteraction::Selected(selected_idx, pitch) => {
-                    if *selected_idx == i {
-                        NoteInteraction::Selected(*pitch)
-                    } else {
-                        NoteInteraction::None
-                    }
-                }
+            let note_interaction = if Some(&i) == dragging {
+                NoteInteraction::Dragging
+            } else if Some(i) == *selected {
+                NoteInteraction::Selected
+            } else if Some(i) == *hovering {
+                NoteInteraction::Hovering
+            } else {
+                NoteInteraction::None
             };
             note.draw(frame, &note_interaction, font);
         }

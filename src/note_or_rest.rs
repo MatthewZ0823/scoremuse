@@ -8,7 +8,7 @@ use iced::{
 use iced::{Size, Vector};
 use num_traits::Pow;
 
-use crate::colors::HIGHLIGHT_COLOR;
+use crate::colors::{HIGHLIGHT_COLOR, HOVER_COLOR};
 use crate::constants::{BPM, STANDARD_STAFF_SPACING};
 use crate::font::{self, FontMeta, GetAdvanceWidth, HasStem};
 use crate::pitch::{Pitch, PitchClass};
@@ -78,10 +78,9 @@ pub struct NoteOrRestEl {
 
 pub enum NoteInteraction {
     None,
-    // Hovering this note
     Hovering,
-    // Selected this note and mouse is hovering pitch
-    Selected(Pitch),
+    Selected,
+    Dragging,
 }
 
 impl NoteOrRestEl {
@@ -213,21 +212,10 @@ impl NoteOrRestEl {
         note_interaction: &NoteInteraction,
         font: &FontMeta,
     ) {
-        // Draw the "selected/hover" note
-        if let NoteInteraction::Selected(hovering_pitch) = note_interaction {
-            draw_note(
-                frame,
-                self.note_or_rest.base_duration,
-                Point::new(self.x, hovering_pitch.to_y_offset()),
-                Self::stem_direction(hovering_pitch),
-                Some(Color::from_rgb(0.6, 0.6, 0.6)),
-                &font,
-            );
-        }
-
         let color = match note_interaction {
             NoteInteraction::None => None,
-            NoteInteraction::Hovering | NoteInteraction::Selected(..) => Some(HIGHLIGHT_COLOR),
+            NoteInteraction::Hovering => Some(HOVER_COLOR),
+            NoteInteraction::Selected | NoteInteraction::Dragging => Some(HIGHLIGHT_COLOR),
         };
 
         match &self.note_or_rest.pitch {

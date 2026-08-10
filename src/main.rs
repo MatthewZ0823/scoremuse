@@ -126,6 +126,9 @@ fn score_editing_view(score_editing_state: &ScoreEditingState) -> Element<'_, Sc
     let staff = &score_editing_state.staff;
     let staff_canvas = canvas(staff).width(Fill).height(Fill);
 
+    let edit_note_buttons_active = staff.staff_interaction.get_selected().is_some()
+        || matches!(staff.staff_interaction, StaffInteractionState::Dragging(..));
+
     // The layout
     let change_duration_button = |base_duration: BaseDuration| -> Button<'_, ScoreEditingMessage> {
         let glyph = match base_duration.0 {
@@ -137,7 +140,7 @@ fn score_editing_view(score_editing_state: &ScoreEditingState) -> Element<'_, Sc
             5 => "\u{E1DB}",
             _ => panic!(),
         };
-        let on_press = if let StaffInteractionState::Selected(..) = &staff.staff_interaction {
+        let on_press = if edit_note_buttons_active {
             Some(ScoreEditingMessage::BaseDurationButtonClick(base_duration))
         } else {
             None
@@ -158,12 +161,11 @@ fn score_editing_view(score_editing_state: &ScoreEditingState) -> Element<'_, Sc
         .on_press_maybe(on_press)
     };
 
-    let toggle_rest_button_msg =
-        if let StaffInteractionState::Selected(..) = staff.staff_interaction {
-            Some(ScoreEditingMessage::ToggleRestButtonClick)
-        } else {
-            None
-        };
+    let toggle_rest_button_msg = if edit_note_buttons_active {
+        Some(ScoreEditingMessage::ToggleRestButtonClick)
+    } else {
+        None
+    };
     let toggle_rest_button: Button<'_, ScoreEditingMessage> =
         button(text("\u{E4E5}").font(staff.get_font()).size(30.))
             .on_press_maybe(toggle_rest_button_msg);
@@ -225,17 +227,17 @@ fn handle_score_editing_message(
             Task::none()
         }
         ScoreEditingMessage::BaseDurationButtonClick(base_duration) => {
-            if let StaffInteractionState::Selected(staff_idx, _) = staff.staff_interaction {
+            if let Some(staff_idx) = staff.staff_interaction.get_selected().cloned() {
                 staff.set_note_base_duration(&staff_idx, base_duration);
-                staff.staff_interaction = StaffInteractionState::None;
+                staff.staff_interaction = StaffInteractionState::NONE;
                 staff.redraw();
             }
             Task::none()
         }
         ScoreEditingMessage::ToggleRestButtonClick => {
-            if let StaffInteractionState::Selected(staff_idx, _) = staff.staff_interaction {
+            if let Some(staff_idx) = staff.staff_interaction.get_selected().cloned() {
                 staff.set_note_pitch(&staff_idx, None);
-                staff.staff_interaction = StaffInteractionState::None;
+                staff.staff_interaction = StaffInteractionState::NONE;
                 staff.redraw();
             }
             Task::none()
