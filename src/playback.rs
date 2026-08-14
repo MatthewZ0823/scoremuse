@@ -5,7 +5,18 @@ use iced::futures::{FutureExt, SinkExt, Stream, StreamExt, channel::mpsc};
 use rodio::{MixerDeviceSink, Source};
 use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 
-use crate::{AudioCommand, AudioEvent, constants::SAMPLE_RATE, midi::MidiMessageTimed};
+use crate::{constants::SAMPLE_RATE, midi::MidiMessageTimed};
+
+#[derive(Debug)]
+pub enum AudioCommand {
+    Resume,
+    Pause,
+}
+
+pub enum AudioEvent {
+    /// Reached the end of playback
+    PlaybackDone,
+}
 
 /// Play the `midi_messages` on the device associated with `audio_handle`
 ///
