@@ -76,8 +76,7 @@ impl ScoreEditingPage {
             change_duration_button(BaseDuration(5)),
             toggle_rest_button,
         ]
-        .spacing(4.)
-        .padding([0., 4.]);
+        .spacing(4.);
 
         let playback_controls = row![{
             let (glyph, message) = match self.playback.playback_status {
@@ -90,7 +89,11 @@ impl ScoreEditingPage {
             button(text(glyph)).on_press(message)
         }];
 
-        let controls = row![duration_controls, playback_controls].padding([10., 0.]);
+        let add_bar_button = button("Add Bar").on_press(ScoreEditingMessage::AddBarButtonClick);
+
+        let controls = row![duration_controls, playback_controls, add_bar_button]
+            .spacing(4.)
+            .padding([10., 0.]);
 
         column![controls, staff_canvas]
             .height(Fill)
@@ -106,7 +109,7 @@ impl ScoreEditingPage {
         let playback = &mut self.playback;
 
         match score_editing_message {
-            ScoreEditingMessage::AddBar => {
+            ScoreEditingMessage::AddBarButtonClick => {
                 staff.add_bar();
                 staff.redraw();
                 Task::none()
@@ -214,7 +217,7 @@ pub enum ScoreEditingMessage {
     PausedPlayback,
     PlayingPlayback,
     PlaybackDone,
-    AddBar,
+    AddBarButtonClick,
 }
 
 struct PlaybackState {

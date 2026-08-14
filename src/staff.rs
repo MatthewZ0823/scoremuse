@@ -98,7 +98,7 @@ impl StaffEl {
     }
 
     pub fn add_bar(self: &mut Self) {
-        let new_bar = Bar::new(vec![NoteOrRest::new(None, note_or_rest::BaseDuration(1))]);
+        let new_bar = Bar::new(vec![NoteOrRest::new(None, note_or_rest::BaseDuration(0))]);
         let new_el = BarEl::new(new_bar, self.width, &self.font);
         self.width += new_el.get_width();
         self.bars.push(new_el);
@@ -143,8 +143,6 @@ impl StaffEl {
 
 #[derive(Default)]
 pub struct State {
-    hovering_new_bar: bool,
-    new_bar_button_bounds: Rectangle,
     staff_transformation: StaffTransformation,
 }
 
@@ -366,14 +364,6 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
         cursor: mouse::Cursor,
     ) -> Option<canvas::Action<ScoreEditingMessage>> {
         // TODO: Clean up update logic
-        let new_bar_width = 4. * STANDARD_STAFF_SPACING;
-        let new_bar_button_bounds = Rectangle {
-            x: self.get_width(),
-            y: 0.,
-            width: new_bar_width,
-            height: 4. * STANDARD_STAFF_SPACING,
-        };
-        state.new_bar_button_bounds = new_bar_button_bounds;
         let cursor_position = cursor
             .position_in(bounds)
             .map(|p| widget_to_staff_space(p, &state.staff_transformation));
@@ -384,12 +374,6 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     match button {
                         mouse::Button::Left => {
                             if let Some(position) = cursor_position {
-                                if state.new_bar_button_bounds.contains(position) {
-                                    return Some(canvas::Action::publish(
-                                        ScoreEditingMessage::AddBar,
-                                    ));
-                                }
-
                                 match self.staff_interaction {
                                     StaffInteractionState::NotDragging { hovering, selected } => {
                                         if let Some(staff_index) = hovering {
@@ -421,19 +405,6 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                 mouse::Event::CursorMoved { .. } => {
                     match cursor_position {
                         Some(position) => {
-                            let new_bar_state_changed;
-                            if state.new_bar_button_bounds.contains(position) {
-                                new_bar_state_changed = !state.hovering_new_bar;
-                                state.hovering_new_bar = true;
-                            } else {
-                                new_bar_state_changed = state.hovering_new_bar;
-                                state.hovering_new_bar = false;
-                            }
-                            if new_bar_state_changed {
-                                self.cache.clear();
-                                return Some(Action::request_redraw());
-                            }
-
                             let hovering = get_hovering(&position, self);
                             match self.staff_interaction {
                                 StaffInteractionState::NotDragging { .. } => match hovering {
@@ -463,13 +434,7 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                                 }
                             }
                         }
-                        None => {
-                            if state.hovering_new_bar {
-                                state.hovering_new_bar = false;
-                                self.cache.clear();
-                                return Some(Action::request_redraw());
-                            }
-                        }
+                        None => (),
                     }
                     return None;
                 }
@@ -519,53 +484,6 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     staff_bar_line_bounds,
                     self.font.engraving_defaults.staff_line_thickness,
                 );
-
-                // new bar icon
-                // let new_bar_stroke = Stroke {
-                //     style: Gradient(
-                //         (Linear::new(
-                //             Point::new(state.new_bar_button_bounds.x, 0.),
-                //             Point::new(
-                //                 state.new_bar_button_bounds.x + state.new_bar_button_bounds.width,
-                //                 0.,
-                //             ),
-                //         )
-                //         .add_stop(0., Color::from_rgb(0.4, 0.4, 0.4))
-                //         .add_stop(1., Color::from_rgb(0.9, 0.9, 0.9)))
-                //         .into(),
-                //     ),
-                //     width: self.font.engraving_defaults.staff_line_thickness * BARLINE_Y_SPACING,
-                //     line_cap: LineCap::default(),
-                //     line_join: LineJoin::default(),
-                //     line_dash: LineDash::default(),
-                // };
-                // draw_bar_lines(f, state.new_bar_button_bounds, new_bar_stroke);
-                // f.fill(
-                //     &Path::circle(
-                //         state.new_bar_button_bounds.center(),
-                //         BARLINE_Y_SPACING * 0.8,
-                //     ),
-                //     Color::from_rgb(1., 1., 1.),
-                // );
-                // let plus_path = Path::new(|b| {
-                //     let r = BARLINE_Y_SPACING * 0.4;
-                //     b.move_to(state.new_bar_button_bounds.center() + Vector::new(-r, 0.));
-                //     b.line_to(state.new_bar_button_bounds.center() + Vector::new(r, 0.));
-                //
-                //     b.move_to(state.new_bar_button_bounds.center() + Vector::new(0., -r));
-                //     b.line_to(state.new_bar_button_bounds.center() + Vector::new(0., r));
-                // });
-                // f.stroke(
-                //     &plus_path,
-                //     Stroke::default()
-                //         .with_width(3.)
-                //         .with_color(if state.hovering_new_bar {
-                //             HIGHLIGHT_COLOR
-                //         } else {
-                //             Color::from_rgb(0.4, 0.4, 0.4)
-                //         })
-                //         .with_line_cap(LineCap::Round),
-                // );
 
                 for (i, bar) in self.bars.iter().enumerate() {
                     let bar_interaction = match self.staff_interaction {
