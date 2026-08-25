@@ -5,7 +5,7 @@ use crate::bar::Bar;
 use crate::font::{FontMeta, load_font};
 use crate::note_or_rest::{BaseDuration, NoteOrRest};
 use crate::pages::{loading_page, score_editing_page};
-use crate::pitch::{Pitch, PitchClass};
+use crate::pitch::{Accidental, Pitch, PitchClass};
 use crate::staff::{Staff, StaffEl};
 use iced::Element;
 use iced::Task;
@@ -44,39 +44,39 @@ impl App {
                         bars: vec![
                             Bar::new(vec![
                                 NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::E, 5)),
+                                    Some(Pitch::new(PitchClass::E, 5, Some(Accidental::Sharp))),
                                     BaseDuration(1),
                                 ),
                                 NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::G, 4)),
-                                    BaseDuration(1),
-                                ),
-                            ]),
-                            Bar::new(vec![
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::F, 4)),
-                                    BaseDuration(2),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::G, 4)),
-                                    BaseDuration(2),
-                                ),
-                                NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::A, 4)),
+                                    Some(Pitch::new(PitchClass::G, 4, Some(Accidental::Flat))),
                                     BaseDuration(1),
                                 ),
                             ]),
                             Bar::new(vec![
                                 NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::F, 4)),
+                                    Some(Pitch::new(PitchClass::F, 4, Some(Accidental::Natural))),
+                                    BaseDuration(2),
+                                ),
+                                NoteOrRest::new(
+                                    Some(Pitch::new(PitchClass::G, 4, None)),
+                                    BaseDuration(2),
+                                ),
+                                NoteOrRest::new(
+                                    Some(Pitch::new(PitchClass::A, 4, None)),
+                                    BaseDuration(1),
+                                ),
+                            ]),
+                            Bar::new(vec![
+                                NoteOrRest::new(
+                                    Some(Pitch::new(PitchClass::F, 4, None)),
                                     BaseDuration(3),
                                 ),
                                 NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::E, 5)),
+                                    Some(Pitch::new(PitchClass::E, 5, None)),
                                     BaseDuration(4),
                                 ),
                                 NoteOrRest::new(
-                                    Some(Pitch::new(PitchClass::F, 4)),
+                                    Some(Pitch::new(PitchClass::F, 4, None)),
                                     BaseDuration(4),
                                 ),
                                 NoteOrRest::new(None, BaseDuration(2)),

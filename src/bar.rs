@@ -234,7 +234,7 @@ impl BarEl {
         let mut x_ = self.get_x() + BARLINE_LEFT_PADDING;
         for note in self.notes.iter_mut() {
             note.set_x(x_);
-            x_ += note.get_width();
+            x_ += note.get_total_width();
         }
 
         self.width = x_ - self.get_x() + font.barlines_meta.single_advance_width;

@@ -7,6 +7,7 @@ use rodio::MixerDeviceSink;
 
 use crate::{
     note_or_rest::BaseDuration,
+    pitch::Accidental,
     playback::{AudioCommand, AudioEvent, play_midi},
     staff::{StaffEl, StaffInteractionMsg, StaffInteractionState, handle_staff_interaction_msg},
 };
@@ -78,6 +79,29 @@ impl ScoreEditingPage {
         ]
         .spacing(4.);
 
+        let change_accidental_button = |accidental: Accidental| -> Button<'_, ScoreEditingMessage> {
+            let on_press = if edit_note_buttons_active {
+                Some(ScoreEditingMessage::AccidentalButtonClick(accidental))
+            } else {
+                None
+            };
+
+            button(
+                text(accidental.to_glyph())
+                    .align_y(alignment::Vertical::Bottom)
+                    .font(staff.get_font())
+                    .size(30.),
+            )
+            .on_press_maybe(on_press)
+        };
+
+        let accidental_controls = row![
+            change_accidental_button(Accidental::Sharp),
+            change_accidental_button(Accidental::Natural),
+            change_accidental_button(Accidental::Flat)
+        ]
+        .spacing(4.);
+
         let playback_controls = row![{
             let (glyph, message) = match self.playback.playback_status {
                 PlayingStatus::Paused(..) | PlayingStatus::PlaybackNotStarted => {
@@ -91,9 +115,14 @@ impl ScoreEditingPage {
 
         let add_bar_button = button("Add Bar").on_press(ScoreEditingMessage::AddBarButtonClick);
 
-        let controls = row![duration_controls, playback_controls, add_bar_button]
-            .spacing(4.)
-            .padding([10., 0.]);
+        let controls = row![
+            duration_controls,
+            accidental_controls,
+            playback_controls,
+            add_bar_button
+        ]
+        .spacing(4.)
+        .padding([10., 0.]);
 
         column![controls, staff_canvas]
             .height(Fill)
@@ -195,6 +224,13 @@ impl ScoreEditingPage {
                 }
                 Task::none()
             }
+            ScoreEditingMessage::AccidentalButtonClick(accidental) => {
+                if let Some(staff_idx) = staff.staff_interaction.get_selected().cloned() {
+                    staff.toggle_note_accidental(&staff_idx, accidental);
+                    staff.redraw();
+                }
+                Task::none()
+            }
         }
     }
 
@@ -211,6 +247,7 @@ impl ScoreEditingPage {
 pub enum ScoreEditingMessage {
     StaffInteractionMsg(StaffInteractionMsg),
     BaseDurationButtonClick(BaseDuration),
+    AccidentalButtonClick(Accidental),
     ToggleRestButtonClick,
     PlayButtonClick,
     PauseButtonClick,

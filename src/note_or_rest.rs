@@ -9,9 +9,9 @@ use iced::{Size, Vector};
 use num_traits::Pow;
 
 use crate::colors::{HIGHLIGHT_COLOR, HOVER_COLOR};
-use crate::constants::{BPM, STANDARD_STAFF_SPACING};
-use crate::font::{self, FontMeta, GetAdvanceWidth, HasStem};
-use crate::pitch::{Pitch, PitchClass};
+use crate::constants::{ACCIDENTAL_SPACING, BPM, STANDARD_STAFF_SPACING};
+use crate::font::{self, FontMeta, HasStem};
+use crate::pitch::{Accidental, Pitch, PitchClass};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 /// 0 -> Whole Note, 1 -> Half Note, 2 - Quarter Note, ...
@@ -69,10 +69,11 @@ impl NoteOrRest {
 #[derive(Debug)]
 pub struct NoteOrRestEl {
     note_or_rest: NoteOrRest,
-    // X-Coordinate of the glyph's X=0, in staff space
+    /// X-Coordinate of the note/rest's X=0, in staff space
     x: f32,
-    // The advance width of the glyph in staff units
-    advance_width: f32,
+    /// Width of the note/rest excluding margins, in staff units
+    width: f32,
+    /// Right margin of the note/rest, in staff units
     right_margin: f32,
 }
 
@@ -85,14 +86,14 @@ pub enum NoteInteraction {
 
 impl NoteOrRestEl {
     pub fn new(note_or_rest: NoteOrRest, x: f32, font: &font::FontMeta) -> Self {
-        let advance_width = Self::compute_advance_width(&note_or_rest, font);
+        let width = Self::compute_width(&note_or_rest, font);
         let right_margin = Self::compute_right_margin(&note_or_rest.base_duration);
 
         Self {
             note_or_rest,
-            advance_width,
-            right_margin,
             x,
+            width,
+            right_margin,
         }
     }
 
@@ -106,7 +107,7 @@ impl NoteOrRestEl {
         }) * STANDARD_STAFF_SPACING
     }
 
-    fn compute_advance_width(note_or_rest: &NoteOrRest, font: &font::FontMeta) -> f32 {
+    fn compute_width(note_or_rest: &NoteOrRest, font: &font::FontMeta) -> f32 {
         match note_or_rest.pitch {
             None => {
                 // Rest
@@ -115,26 +116,21 @@ impl NoteOrRestEl {
             Some(pitch) => {
                 // Note
                 let stem_dir = Self::stem_direction(&pitch);
-                let get_advance_width: Box<&dyn GetAdvanceWidth> =
-                    match note_or_rest.base_duration.0 {
-                        0 => Box::new(&font.notes_meta.whole_note),
-                        1 => Box::new(&font.notes_meta.half_note),
-                        2 => Box::new(&font.notes_meta.quarter_note),
-                        3 => Box::new(&font.notes_meta.note_8th),
-                        4 => Box::new(&font.notes_meta.note_16th),
-                        5 => Box::new(&font.notes_meta.note_32nd),
-                        6 => Box::new(&font.notes_meta.note_64th),
-                        7 => Box::new(&font.notes_meta.note_128th),
-                        _ => panic!("Notes shorter than 128th have not been implemented"),
-                    };
+                let note_advance_width = font
+                    .notes_meta
+                    .get_advance_width(&note_or_rest.base_duration, &stem_dir);
 
-                get_advance_width.get_advance_width(&stem_dir)
+                let accidental_width = pitch.accidental.map_or(0., |accidental| {
+                    font.accidentals_meta.get_advance_width(accidental)
+                }) + ACCIDENTAL_SPACING;
+
+                note_advance_width + accidental_width
             }
         }
     }
 
     fn stem_down(pitch: &Pitch) -> bool {
-        *pitch > Pitch::new(PitchClass::B, 4)
+        pitch.to_staff_index().0 > Pitch::new(PitchClass::B, 4, None).to_staff_index().0
     }
 
     fn stem_direction(pitch: &Pitch) -> StemDirection {
@@ -160,13 +156,13 @@ impl NoteOrRestEl {
     }
 
     /// Gets the total width of the glyph, including margins
-    pub fn get_width(self: &Self) -> f32 {
-        self.advance_width + self.right_margin
+    pub fn get_total_width(self: &Self) -> f32 {
+        self.width + self.right_margin
     }
 
     /// Gets the x-coordinate of the right bound
     pub fn get_right_bound(self: &Self) -> f32 {
-        self.x + self.get_width()
+        self.x + self.get_total_width()
     }
 
     /// Gets the x-coordinate of the left bound
@@ -193,15 +189,15 @@ impl NoteOrRestEl {
         self.fix_width(font);
     }
 
-    /// May change width
+    /// May change width and right margin
     pub fn set_base_duration(&mut self, base_duration: BaseDuration, font: &FontMeta) {
         self.note_or_rest.base_duration = base_duration;
         self.fix_width(font);
     }
 
-    /// Fix the width after a change in self
+    /// Fix the width/right margin after a change in self
     fn fix_width(&mut self, font: &FontMeta) {
-        self.advance_width = Self::compute_advance_width(&self.note_or_rest, font);
+        self.width = Self::compute_width(&self.note_or_rest, font);
         self.right_margin = Self::compute_right_margin(&self.note_or_rest.base_duration);
     }
 
@@ -247,10 +243,20 @@ impl NoteOrRestEl {
                 );
             }
             Some(pitch) => {
+                let mut pos = Point::new(self.x, (&pitch).to_y());
+
+                pitch.accidental.map(|a| {
+                    draw_glyph(frame, a.to_glyph(), pos, color, &font.font_iced);
+                    pos += Vector::new(
+                        font.accidentals_meta.get_advance_width(a) + ACCIDENTAL_SPACING,
+                        0.,
+                    );
+                });
+
                 draw_note(
                     frame,
                     self.note_or_rest.base_duration,
-                    Point::new(self.x, (&pitch).to_y_offset()),
+                    pos,
                     Self::stem_direction(pitch),
                     color,
                     &font,
@@ -280,7 +286,7 @@ fn draw_note(
     }
 
     let notes_meta = &font_meta.notes_meta;
-    let thickness = font_meta.engraving_defaults.stem_thickness;
+    let stem_thickness = font_meta.engraving_defaults.stem_thickness;
 
     let note_head_glyph = match base_duration.0 {
         0 => "\u{E0A2}",
@@ -295,30 +301,27 @@ fn draw_note(
         &font_meta.font_iced,
     );
 
-    match base_duration.0 {
-        0 => (),
-        _ => {
-            let stem_meta = match base_duration.0 {
-                1 => &notes_meta.half_note,
-                2 => &notes_meta.quarter_note,
-                3 => &notes_meta.note_8th,
-                4 => &notes_meta.note_16th,
-                5 => &notes_meta.note_32nd,
-                6 => &notes_meta.note_64th,
-                7 => &notes_meta.note_128th,
-                _ => panic!(),
-            };
-            draw_stem(
-                frame,
-                &position,
-                stem_meta,
-                &stem_direction,
-                thickness,
-                &note_head_color,
-                base_duration,
-                font_meta,
-            );
-        }
+    if base_duration.0 != 0 {
+        let stem_meta = match base_duration.0 {
+            1 => &notes_meta.half_note,
+            2 => &notes_meta.quarter_note,
+            3 => &notes_meta.note_8th,
+            4 => &notes_meta.note_16th,
+            5 => &notes_meta.note_32nd,
+            6 => &notes_meta.note_64th,
+            7 => &notes_meta.note_128th,
+            _ => panic!(),
+        };
+        draw_stem(
+            frame,
+            &position,
+            stem_meta,
+            &stem_direction,
+            stem_thickness,
+            &note_head_color,
+            base_duration,
+            font_meta,
+        );
     };
 }
 
@@ -352,7 +355,7 @@ fn draw_stem(
     note_position: &Point,
     stem_meta: &impl HasStem,
     stem_direction: &StemDirection,
-    thickness: f32,
+    stem_thickness: f32,
     color: &Color,
     base_duration: BaseDuration,
     font_meta: &FontMeta,
@@ -363,7 +366,7 @@ fn draw_stem(
         StemDirection::DOWN => 1.,
     };
     let length = stem_meta.get_length(stem_direction) * sign;
-    let width = thickness * sign;
+    let width = stem_thickness * sign;
 
     let stem = Path::rectangle(anchor, Size::new(width, length));
     frame.fill(&stem, *color);
@@ -372,7 +375,7 @@ fn draw_stem(
         let stem_end = anchor
             + Vector::new(
                 match stem_direction {
-                    StemDirection::UP => -thickness,
+                    StemDirection::UP => -stem_thickness,
                     StemDirection::DOWN => 0.,
                 },
                 length,

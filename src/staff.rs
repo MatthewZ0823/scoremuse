@@ -5,9 +5,9 @@ use std::time::Duration;
 use crate::bar::{Bar, BarEl, BarInteraction};
 use crate::constants::STANDARD_STAFF_SPACING;
 use crate::midi::{MidiMessage, MidiMessageTimed};
-use crate::note_or_rest::{BaseDuration, NoteOrRest};
+use crate::note_or_rest::{BaseDuration, NoteOrRest, NoteOrRestEl};
 use crate::pages::score_editing_page::ScoreEditingMessage;
-use crate::pitch::Pitch;
+use crate::pitch::{Accidental, Pitch};
 use crate::{FontMeta, note_or_rest};
 use iced::widget::Action;
 use iced::widget::canvas::{self, Frame};
@@ -69,6 +69,10 @@ impl StaffEl {
         &self.bars
     }
 
+    pub fn note_at(&self, index: &StaffIndex) -> &NoteOrRestEl {
+        &self.get_bars()[index.bar_index].get_notes()[index.note_index]
+    }
+
     pub fn get_midi_messages(&self) -> Vec<MidiMessageTimed> {
         let mut ret = vec![];
         for bar in self.get_bars() {
@@ -126,6 +130,21 @@ impl StaffEl {
         bar.set_note_base_duration(staff_index.note_index, base_duration, &self.font);
         let dw = bar.get_width() - w;
         self.fix_layout(staff_index.bar_index, dw);
+    }
+
+    /// Toggle the note's accidental
+    /// eg. If the note is flat and `accidental` is flat, then the note's accidental becomes None
+    /// eg. If the note is flat and `accidental` is sharp, then the note's accidental becomes sharp
+    ///
+    /// May change the layout of self
+    pub fn toggle_note_accidental(
+        self: &mut Self,
+        staff_index: &StaffIndex,
+        accidental: Accidental,
+    ) {
+        let old_pitch = self.note_at(staff_index).get_pitch();
+        let new_pitch = old_pitch.map(|p| p.toggle_accidental(accidental));
+        self.set_note_pitch(staff_index, new_pitch);
     }
 
     pub fn redraw(&mut self) {
@@ -424,7 +443,7 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                                     }
                                 },
                                 StaffInteractionState::Dragging(..) => {
-                                    if let Some(pitch) = Pitch::from_y_offset(position.y) {
+                                    if let Some(pitch) = Pitch::from_y(position.y) {
                                         return Some(canvas::Action::publish(
                                             ScoreEditingMessage::StaffInteractionMsg(
                                                 StaffInteractionMsg::DragToPitch(pitch),

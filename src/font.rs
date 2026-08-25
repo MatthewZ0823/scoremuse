@@ -6,7 +6,11 @@ use std::{array::from_fn, fmt, fs, io, path::PathBuf};
 
 use iced::{Font, Task, Vector, font};
 
-use crate::{constants::STANDARD_STAFF_SPACING, note_or_rest::StemDirection};
+use crate::{
+    constants::STANDARD_STAFF_SPACING,
+    note_or_rest::{BaseDuration, StemDirection},
+    pitch::Accidental,
+};
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -68,6 +72,25 @@ pub struct FontMeta {
     pub rests_meta: RestsMeta,
     /// Metadata pretaining to the barlines
     pub barlines_meta: BarlinesMeta,
+    /// Metadata pretaining to accidentals
+    pub accidentals_meta: AccidentalsMeta,
+}
+
+#[derive(Clone, Debug)]
+pub struct AccidentalsMeta {
+    pub sharp_advance_width: f32,
+    pub natural_advance_width: f32,
+    pub flat_advance_width: f32,
+}
+
+impl AccidentalsMeta {
+    pub fn get_advance_width(&self, accidental: Accidental) -> f32 {
+        match accidental {
+            Accidental::Sharp => self.sharp_advance_width,
+            Accidental::Natural => self.natural_advance_width,
+            Accidental::Flat => self.flat_advance_width,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +109,27 @@ pub struct NotesMeta {
     pub note_32nd: StemNoteMeta,
     pub note_64th: StemNoteMeta,
     pub note_128th: StemNoteMeta,
+}
+
+impl NotesMeta {
+    /// Get the advance width of a note with `base_duration` and `stem_direction` in this font
+    pub fn get_advance_width(
+        &self,
+        base_duration: &BaseDuration,
+        stem_direction: &StemDirection,
+    ) -> f32 {
+        match base_duration.0 {
+            0 => self.whole_note.get_advance_width(&stem_direction),
+            1 => self.half_note.get_advance_width(&stem_direction),
+            2 => self.quarter_note.get_advance_width(&stem_direction),
+            3 => self.note_8th.get_advance_width(&stem_direction),
+            4 => self.note_16th.get_advance_width(&stem_direction),
+            5 => self.note_32nd.get_advance_width(&stem_direction),
+            6 => self.note_64th.get_advance_width(&stem_direction),
+            7 => self.note_128th.get_advance_width(&stem_direction),
+            _ => panic!("Notes shorter than 128th have not been implemented"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -202,6 +246,7 @@ impl TryFrom<RawFontMeta> for FontMeta {
     fn try_from(value: RawFontMeta) -> Result<Self, Self::Error> {
         let font_name: &'static str = value.font_name.clone().leak();
         let font_iced = Font::with_name(font_name);
+        let advance_widths = &value.glyph_advance_widths;
 
         let notehead_black_stem_anchors =
             StemAnchors::try_from(&value.glyphs_with_anchors.notehead_black)?;
@@ -210,8 +255,7 @@ impl TryFrom<RawFontMeta> for FontMeta {
             font_iced,
             font_name: value.font_name,
             barlines_meta: BarlinesMeta {
-                single_advance_width: value.glyph_advance_widths.barline_single
-                    * STANDARD_STAFF_SPACING,
+                single_advance_width: advance_widths.barline_single * STANDARD_STAFF_SPACING,
                 thin_thickness: value.engraving_defaults.thin_barline_thickness
                     * STANDARD_STAFF_SPACING,
             },
@@ -222,61 +266,65 @@ impl TryFrom<RawFontMeta> for FontMeta {
             },
             notes_meta: NotesMeta {
                 whole_note: WholeNoteMeta {
-                    advance_width: value.glyph_advance_widths.note_whole * STANDARD_STAFF_SPACING,
+                    advance_width: advance_widths.note_whole * STANDARD_STAFF_SPACING,
                 },
                 half_note: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_half_up,
-                    value.glyph_advance_widths.note_half_down,
+                    advance_widths.note_half_up,
+                    advance_widths.note_half_down,
                     StemAnchors::try_from(&value.glyphs_with_anchors.notehead_half)?,
                 ),
                 quarter_note: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_half_up,
-                    value.glyph_advance_widths.note_half_down,
+                    advance_widths.note_half_up,
+                    advance_widths.note_half_down,
                     notehead_black_stem_anchors.clone(),
                 ),
                 note_8th: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_8th_up,
-                    value.glyph_advance_widths.note_8th_down,
+                    advance_widths.note_8th_up,
+                    advance_widths.note_8th_down,
                     notehead_black_stem_anchors.clone(),
                 ),
                 note_16th: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_16th_up,
-                    value.glyph_advance_widths.note_16th_down,
+                    advance_widths.note_16th_up,
+                    advance_widths.note_16th_down,
                     notehead_black_stem_anchors.clone(),
                 ),
                 note_32nd: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_32nd_up,
-                    value.glyph_advance_widths.note_32nd_down,
+                    advance_widths.note_32nd_up,
+                    advance_widths.note_32nd_down,
                     notehead_black_stem_anchors.clone(),
                 ),
                 note_64th: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_64th_up,
-                    value.glyph_advance_widths.note_64th_down,
+                    advance_widths.note_64th_up,
+                    advance_widths.note_64th_down,
                     notehead_black_stem_anchors.clone(),
                 ),
                 note_128th: StemNoteMeta::from_smufl_units(
-                    value.glyph_advance_widths.note_128th_up,
-                    value.glyph_advance_widths.note_128th_down,
+                    advance_widths.note_128th_up,
+                    advance_widths.note_128th_down,
                     notehead_black_stem_anchors.clone(),
                 ),
             },
             rests_meta: RestsMeta {
                 rests: from_fn(|i| {
-                    let g = &value.glyph_advance_widths;
                     let advance_width = match i {
-                        0 => g.rest_whole,
-                        1 => g.rest_half,
-                        2 => g.rest_quarter,
-                        3 => g.rest_8th,
-                        4 => g.rest_16th,
-                        5 => g.rest_32nd,
-                        6 => g.rest_64th,
-                        7 => g.rest_128th,
+                        0 => advance_widths.rest_whole,
+                        1 => advance_widths.rest_half,
+                        2 => advance_widths.rest_quarter,
+                        3 => advance_widths.rest_8th,
+                        4 => advance_widths.rest_16th,
+                        5 => advance_widths.rest_32nd,
+                        6 => advance_widths.rest_64th,
+                        7 => advance_widths.rest_128th,
                         _ => panic!("Rests shorter than 128th have not been implemented"),
                     } * STANDARD_STAFF_SPACING;
 
                     RestMeta { advance_width }
                 }),
+            },
+            accidentals_meta: AccidentalsMeta {
+                sharp_advance_width: advance_widths.accidental_sharp * STANDARD_STAFF_SPACING,
+                natural_advance_width: advance_widths.accidental_natural * STANDARD_STAFF_SPACING,
+                flat_advance_width: advance_widths.accidental_flat * STANDARD_STAFF_SPACING,
             },
         })
     }
@@ -317,6 +365,9 @@ struct RawGlyphAdvanceWidths {
     rest_64th: f32,
     rest_128th: f32,
     barline_single: f32,
+    accidental_sharp: f32,
+    accidental_natural: f32,
+    accidental_flat: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
