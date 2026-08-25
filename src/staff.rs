@@ -496,7 +496,7 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     x: 0.,
                     y: 0.,
                     width: self.get_width(),
-                    height: 400.,
+                    height: 4. * STANDARD_STAFF_SPACING,
                 };
                 draw_bar_lines(
                     f,

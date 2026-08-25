@@ -42,7 +42,7 @@ Done rendering multiple bars, that was pretty easy.
 
 Note about the coordinate system, the origin of the staff is the top left corner, where the first barline is. +x is right, +y is down. Nevermind
 
-Going to use a different coordinate system for staffs than convention. Instead of making one unit the height of the entire staff, I'm going to make the space between two staff lines as 100 units. The scale has been blown up so glyphs render correctly and can then be scaled down. +x is right, and +y is down. y=0 is the top bar line, x=0 is the start of the staff. This is different from standard because of the way iced renders stuff. This will be known as staff space.
+Going to use a different coordinate system for staffs than convention. Instead of making one unit the height of the entire staff, I'm going to make the space between two staff lines as `STANDARD_STAFF_SPACING` found in `constants.rs`. The scale has been blown up so glyphs render correctly and can then be scaled down. +x is right, and +y is down. y=0 is the top bar line, x=0 is the start of the staff. This is different from standard because of the way iced renders stuff. This will be known as staff space.
 
 1 staff unit is one hundredth of the distance between two staff spaces
 
