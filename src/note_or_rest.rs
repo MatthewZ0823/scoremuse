@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use iced::widget::canvas::{self};
 use iced::{
     Color, Point,
     widget::canvas::{Frame, Path},
@@ -11,7 +10,8 @@ use num_traits::Pow;
 use crate::colors::{HIGHLIGHT_COLOR, HOVER_COLOR};
 use crate::constants::{ACCIDENTAL_SPACING, BPM, STANDARD_STAFF_SPACING};
 use crate::font::{self, FontMeta, HasStem};
-use crate::pitch::{Accidental, Pitch, PitchClass};
+use crate::pitch::{Pitch, PitchClass};
+use crate::utils::draw_smufl_glyph;
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 /// 0 -> Whole Note, 1 -> Half Note, 2 - Quarter Note, ...
@@ -40,7 +40,7 @@ impl PartialOrd for BaseDuration {
 }
 
 impl Ord for BaseDuration {
-    // Order is flippde
+    /// Longer durations are greater than shorter durations
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         other.0.cmp(&self.0)
     }
@@ -216,15 +216,15 @@ impl NoteOrRestEl {
 
         match &self.note_or_rest.pitch {
             None => {
-                let glyph_str = match self.note_or_rest.base_duration.0 {
-                    0 => "\u{E4E3}",
-                    1 => "\u{E4E4}",
-                    2 => "\u{E4E5}",
-                    3 => "\u{E4E6}",
-                    4 => "\u{E4E7}",
-                    5 => "\u{E4E8}",
-                    6 => "\u{E4E9}",
-                    7 => "\u{E4EA}",
+                let glyph_char = match self.note_or_rest.base_duration.0 {
+                    0 => '\u{E4E3}',
+                    1 => '\u{E4E4}',
+                    2 => '\u{E4E5}',
+                    3 => '\u{E4E6}',
+                    4 => '\u{E4E7}',
+                    5 => '\u{E4E8}',
+                    6 => '\u{E4E9}',
+                    7 => '\u{E4EA}',
                     _ => panic!("Rests shorter than 128th not yet implemented"),
                 };
 
@@ -234,9 +234,9 @@ impl NoteOrRestEl {
                     2. * STANDARD_STAFF_SPACING
                 };
 
-                draw_glyph(
+                draw_smufl_glyph(
                     frame,
-                    glyph_str,
+                    glyph_char,
                     Point::new(self.x, y),
                     color,
                     &font.font_iced,
@@ -246,7 +246,7 @@ impl NoteOrRestEl {
                 let mut pos = Point::new(self.x, (&pitch).to_y());
 
                 pitch.accidental.map(|a| {
-                    draw_glyph(frame, a.to_glyph(), pos, color, &font.font_iced);
+                    draw_smufl_glyph(frame, a.to_glyph(), pos, color, &font.font_iced);
                     pos += Vector::new(
                         font.accidentals_meta.get_advance_width(a) + ACCIDENTAL_SPACING,
                         0.,
@@ -289,11 +289,11 @@ fn draw_note(
     let stem_thickness = font_meta.engraving_defaults.stem_thickness;
 
     let note_head_glyph = match base_duration.0 {
-        0 => "\u{E0A2}",
-        1 => "\u{E0A3}",
-        _ => "\u{E0A4}",
+        0 => '\u{E0A2}',
+        1 => '\u{E0A3}',
+        _ => '\u{E0A4}',
     };
-    let note_head_color = draw_glyph(
+    let note_head_color = draw_smufl_glyph(
         frame,
         note_head_glyph,
         position,
@@ -323,30 +323,6 @@ fn draw_note(
             font_meta,
         );
     };
-}
-
-// Returns the color the glyph was drawn as
-fn draw_glyph(
-    frame: &mut Frame,
-    glyph: &str,
-    position: Point,
-    color: Option<Color>,
-    font: &iced::font::Font,
-) -> Color {
-    let glyph: canvas::Text = canvas::Text {
-        font: *font,
-        align_y: iced::alignment::Vertical::Center,
-        position: position,
-        size: (4. * STANDARD_STAFF_SPACING).into(),
-        ..glyph.into()
-    };
-
-    let mut _color: Color = Default::default();
-    glyph.draw_with(|path, c| {
-        _color = color.unwrap_or(c);
-        frame.fill(&path, color.unwrap_or(c));
-    });
-    _color
 }
 
 /// Draws flags also
@@ -410,6 +386,6 @@ fn draw_flag(
             StemDirection::UP => 0,
             StemDirection::DOWN => 1,
         });
-    let glyph = char::from_u32(glyph_unicode).unwrap().to_string();
-    draw_glyph(frame, &glyph, *stem_end, Some(*color), font);
+    let glyph = char::from_u32(glyph_unicode).unwrap();
+    draw_smufl_glyph(frame, glyph, *stem_end, Some(*color), font);
 }

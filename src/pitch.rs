@@ -22,11 +22,11 @@ pub enum Accidental {
 }
 
 impl Accidental {
-    pub fn to_glyph(&self) -> &'static str {
+    pub fn to_glyph(&self) -> char {
         match self {
-            Self::Sharp => "\u{E262}",
-            Self::Natural => "\u{E261}",
-            Self::Flat => "\u{E260}",
+            Self::Sharp => '\u{E262}',
+            Self::Natural => '\u{E261}',
+            Self::Flat => '\u{E260}',
         }
     }
 }

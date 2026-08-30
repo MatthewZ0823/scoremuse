@@ -3,7 +3,7 @@ use std::cmp::min;
 use std::time::Duration;
 
 use crate::bar::{Bar, BarEl, BarInteraction};
-use crate::constants::STANDARD_STAFF_SPACING;
+use crate::constants::{STAFF_PREFIX_WIDTH, STANDARD_STAFF_SPACING};
 use crate::midi::{MidiMessage, MidiMessageTimed};
 use crate::note_or_rest::{BaseDuration, NoteOrRest, NoteOrRestEl};
 use crate::pages::score_editing_page::ScoreEditingMessage;
@@ -12,10 +12,6 @@ use crate::{FontMeta, note_or_rest};
 use iced::widget::Action;
 use iced::widget::canvas::{self, Frame};
 use iced::{Color, Point, Rectangle, Renderer, Theme, Vector, mouse};
-
-// Padding in front first bar
-const PREAMBLE_WIDTH: f32 = 100.;
-// const PREAMBLE_WIDTH: f32 = 6. * BARLINE_Y_SPACING;
 
 #[derive(Debug, Default)]
 pub struct Staff {
@@ -39,7 +35,7 @@ impl StaffEl {
         let bars: Vec<BarEl> = staff
             .bars
             .into_iter()
-            .scan(PREAMBLE_WIDTH, |x, bar| {
+            .scan(STAFF_PREFIX_WIDTH, |x, bar| {
                 let b = BarEl::new(bar, *x, &font);
                 *x += b.get_width();
                 Some(b)
