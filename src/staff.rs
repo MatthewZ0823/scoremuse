@@ -8,6 +8,7 @@ use crate::midi::{MidiMessage, MidiMessageTimed};
 use crate::note_or_rest::{BaseDuration, NoteOrRest, NoteOrRestEl};
 use crate::pages::score_editing_page::ScoreEditingMessage;
 use crate::pitch::{Accidental, Pitch};
+use crate::utils::draw_smufl_glyph;
 use crate::{FontMeta, note_or_rest};
 use iced::widget::Action;
 use iced::widget::canvas::{self, Frame};
@@ -498,6 +499,22 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     f,
                     staff_bar_line_bounds,
                     self.font.engraving_defaults.staff_line_thickness,
+                );
+
+                draw_smufl_glyph(
+                    f,
+                    '\u{E050}',
+                    Point::new(0.5 * STANDARD_STAFF_SPACING, 3. * STANDARD_STAFF_SPACING),
+                    None,
+                    &self.font.font_iced,
+                );
+
+                draw_smufl_glyph(
+                    f,
+                    '\u{E084}',
+                    Point::new(0.5 * STANDARD_STAFF_SPACING, 3. * STANDARD_STAFF_SPACING),
+                    None,
+                    &self.font.font_iced,
                 );
 
                 for (i, bar) in self.bars.iter().enumerate() {
