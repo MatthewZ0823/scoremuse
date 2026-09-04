@@ -80,6 +80,7 @@ impl App {
                                     BaseDuration(4),
                                 ),
                                 NoteOrRest::new(None, BaseDuration(2)),
+                                NoteOrRest::new(None, BaseDuration(2)),
                             ]),
                             Bar::new(vec![NoteOrRest::new(None, BaseDuration(0))]),
                             Bar::new(vec![

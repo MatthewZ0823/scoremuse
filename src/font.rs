@@ -74,6 +74,13 @@ pub struct FontMeta {
     pub barlines_meta: BarlinesMeta,
     /// Metadata pretaining to accidentals
     pub accidentals_meta: AccidentalsMeta,
+    /// Metadata pretaining to clefs
+    pub clefs_meta: ClefsMeta,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClefsMeta {
+    pub g_clef_advance_width: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -326,6 +333,9 @@ impl TryFrom<RawFontMeta> for FontMeta {
                 natural_advance_width: advance_widths.accidental_natural * STANDARD_STAFF_SPACING,
                 flat_advance_width: advance_widths.accidental_flat * STANDARD_STAFF_SPACING,
             },
+            clefs_meta: ClefsMeta {
+                g_clef_advance_width: advance_widths.g_clef * STANDARD_STAFF_SPACING,
+            },
         })
     }
 }
@@ -368,6 +378,7 @@ struct RawGlyphAdvanceWidths {
     accidental_sharp: f32,
     accidental_natural: f32,
     accidental_flat: f32,
+    g_clef: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]

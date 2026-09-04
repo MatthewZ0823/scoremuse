@@ -501,6 +501,7 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     self.font.engraving_defaults.staff_line_thickness,
                 );
 
+                // Clef
                 draw_smufl_glyph(
                     f,
                     '\u{E050}',
@@ -509,10 +510,28 @@ impl canvas::Program<ScoreEditingMessage> for StaffEl {
                     &self.font.font_iced,
                 );
 
+                // Time Singature
                 draw_smufl_glyph(
                     f,
                     '\u{E084}',
-                    Point::new(0.5 * STANDARD_STAFF_SPACING, 3. * STANDARD_STAFF_SPACING),
+                    Point::new(
+                        0.5 * STANDARD_STAFF_SPACING
+                            + self.font.clefs_meta.g_clef_advance_width
+                            + 0.5 * STANDARD_STAFF_SPACING,
+                        3. * STANDARD_STAFF_SPACING,
+                    ),
+                    None,
+                    &self.font.font_iced,
+                );
+                draw_smufl_glyph(
+                    f,
+                    '\u{E084}',
+                    Point::new(
+                        0.5 * STANDARD_STAFF_SPACING
+                            + self.font.clefs_meta.g_clef_advance_width
+                            + 0.5 * STANDARD_STAFF_SPACING,
+                        1. * STANDARD_STAFF_SPACING,
+                    ),
                     None,
                     &self.font.font_iced,
                 );
